@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
+*.tsbuildinfo
