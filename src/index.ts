@@ -43,7 +43,23 @@ export {
 
 // Retrieval
 export { recall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
+export { llmRerank, parseOrder } from "./retrieval/rerank.js";
+
+// LLM (subscription CLIs — claude/codex — or any custom command)
+export {
+  createLLMProvider,
+  type LLMProvider,
+  type LLMConfig,
+  type LLMCompleteOptions,
+} from "./llm/provider.js";
+export { ClaudeCliProvider, type ClaudeCliOptions } from "./llm/claude-cli.js";
+export { CodexCliProvider, type CodexCliOptions } from "./llm/codex-cli.js";
+export { CommandProvider, type CommandOptions } from "./llm/command.js";
+
+// Config
+export { loadConfig, type EngramFileConfig } from "./config.js";
 
 // Utils that callers may reuse
 export { cosine, l2normalize } from "./util/cosine.js";
 export { parseFrontmatter, type Frontmatter } from "./util/frontmatter.js";
+export { runCommand, runViaTmux } from "./util/exec.js";

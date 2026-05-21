@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to engram.config.json to configure engram once. Uses your Claude/ChatGPT subscription via its CLI — no API key. Remove fields you don't need.",
+  "dbPath": "agent-memory.db",
+  "embedding": { "provider": "hashing", "dim": 256 },
+  "llm": {
+    "provider": "claude-cli",
+    "model": "sonnet",
+    "useTmux": false
+  },
+  "rerank": true,
+  "defaultK": 6
+}

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Engram } from "./engram.js";
+import { loadConfig } from "./config.js";
 import type { EmbeddingConfig } from "./embeddings/provider.js";
+import type { LLMConfig } from "./llm/provider.js";
 
 interface ParsedArgs {
   positionals: string[];
@@ -51,10 +53,16 @@ COMMANDS
 
 COMMON OPTIONS
   --db <path>          SQLite file (default: $ENGRAM_DB or ./engram.db)
+  --config <path>      Load settings from a JSON config (default: ./engram.config.json)
   --provider <name>    Embedding provider: hashing (default, offline) | openai
   --model <name>       Embedding model (openai), e.g. text-embedding-3-small
   --dim <n>            Embedding dimensions
   --openai-key <key>   OpenAI API key (or set OPENAI_API_KEY)
+
+LLM OPTIONS (use your subscription — no API key)
+  --llm <name>         claude | codex | none   (powers --rerank)
+  --llm-model <name>   Model: claude e.g. sonnet|opus|haiku; codex e.g. gpt-5-codex
+  --tmux               Invoke the LLM CLI via a silent tmux session
 
 index OPTIONS
   --chunk <mode>       auto (default) | file | paragraph | heading
@@ -63,17 +71,21 @@ index OPTIONS
 recall OPTIONS
   -k <n>               Number of results (default: 8)
   --tier <tier>        Restrict to a tier (episodic|semantic|procedural|...)
+  --rerank             Rerank candidates with the configured LLM (better recall)
   --mark-used          Bump recency/use counters on returned memories
   --json               Output raw JSON
 
 EXAMPLES
   engram index ./memories
   engram recall "what went wrong with the last deploy?" -k 5
+  engram recall "trust an agent that says it's done?" --llm claude --llm-model sonnet --rerank
   engram add "Prod broke when we skipped the migration step" --tier episodic --importance 9
   engram stats
 `;
 
-function embeddingFromFlags(flags: Record<string, string | boolean>): EmbeddingConfig {
+/** Build an embedding config from flags, or undefined to fall back to config/default. */
+function embeddingFromFlags(flags: Record<string, string | boolean>): EmbeddingConfig | undefined {
+  if (!flags.provider && !flags.dim) return undefined;
   const provider = (flags.provider as string) || "hashing";
   const dim = flags.dim ? Number(flags.dim) : undefined;
   if (provider === "openai") {
@@ -87,6 +99,18 @@ function embeddingFromFlags(flags: Record<string, string | boolean>): EmbeddingC
   return { provider: "hashing", dim };
 }
 
+/** Build an LLM config from flags, or undefined to fall back to config/none. */
+function llmFromFlags(flags: Record<string, string | boolean>): LLMConfig | undefined {
+  const llm = flags.llm as string | undefined;
+  if (!llm) return undefined;
+  if (llm === "none") return { provider: "none" };
+  const model = (flags["llm-model"] as string) || undefined;
+  const useTmux = Boolean(flags.tmux);
+  if (llm === "claude" || llm === "claude-cli") return { provider: "claude-cli", model, useTmux };
+  if (llm === "codex" || llm === "codex-cli") return { provider: "codex-cli", model, useTmux };
+  return undefined;
+}
+
 async function main(): Promise<void> {
   const { positionals, flags } = parseArgs(process.argv.slice(2));
   const cmd = positionals[0];
@@ -96,8 +120,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const dbPath = (flags.db as string) || process.env.ENGRAM_DB || "engram.db";
-  const engram = new Engram({ dbPath, embedding: embeddingFromFlags(flags) });
+  const config = loadConfig(flags.config as string | undefined);
+  const dbPath = (flags.db as string) || config.dbPath || process.env.ENGRAM_DB || "engram.db";
+  const engram = new Engram({
+    dbPath,
+    embedding: embeddingFromFlags(flags) ?? config.embedding,
+    llm: llmFromFlags(flags) ?? config.llm,
+  });
 
   try {
     switch (cmd) {
@@ -118,10 +147,15 @@ async function main(): Promise<void> {
       case "recall": {
         const query = positionals.slice(1).join(" ");
         if (!query) throw new Error('recall requires a query, e.g. recall "how do I X"');
+        const rerank = flags.rerank !== undefined ? Boolean(flags.rerank) : Boolean(config.rerank);
+        if (rerank && !engram.llm) {
+          process.stderr.write("Note: --rerank requested but no LLM configured; using hybrid order.\n");
+        }
         const results = await engram.recall(query, {
           k: flags.k ? Number(flags.k) : undefined,
           tier: (flags.tier as string) || undefined,
           markUsed: Boolean(flags["mark-used"]),
+          rerank,
         });
         if (flags.json) {
           process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);

@@ -1,7 +1,9 @@
 import { SqliteStore } from "./store/sqlite-store.js";
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddings/provider.js";
+import { createLLMProvider, type LLMProvider } from "./llm/provider.js";
 import { ingestDirectory, type IngestOptions } from "./ingest/markdown.js";
 import { recall as hybridRecall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
+import { llmRerank } from "./retrieval/rerank.js";
 import { sha256 } from "./util/hash.js";
 import type { MemoryRecord, MemoryStore, StoreStats } from "./store/types.js";
 import type {
@@ -43,12 +45,15 @@ export interface IndexOptions extends IngestOptions {
 export class Engram {
   readonly store: MemoryStore;
   readonly embedding: EmbeddingProvider;
+  /** The configured LLM (subscription CLI), or null for pure hybrid search. */
+  readonly llm: LLMProvider | null;
   private readonly defaultK: number;
   private readonly weights: RecallWeights;
 
   constructor(opts: EngramOptions = {}) {
     this.store = new SqliteStore(opts.dbPath ?? "engram.db");
     this.embedding = createEmbeddingProvider(opts.embedding);
+    this.llm = createLLMProvider(opts.llm);
     this.defaultK = opts.defaultK ?? 8;
     this.weights = { ...DEFAULT_WEIGHTS, ...(opts.weights ?? {}) };
   }
@@ -117,9 +122,53 @@ export class Engram {
     };
   }
 
-  /** Recall the top-k most relevant memories for a query (hybrid search). */
+  /**
+   * Recall the top-k most relevant memories for a query (hybrid search).
+   * With `{ rerank: true }` and an LLM configured, hybrid produces a larger
+   * candidate pool that the LLM (your subscription) then reorders by reading the
+   * actual text — higher quality, at the cost of one LLM call.
+   */
   async recall(query: string, opts: RecallOptions = {}): Promise<RecallResult[]> {
-    return hybridRecall(this.store, this.embedding, query, { k: this.defaultK, ...opts }, this.weights);
+    const k = opts.k ?? this.defaultK;
+    const doRerank = Boolean(opts.rerank) && this.llm !== null;
+
+    if (!doRerank) {
+      return hybridRecall(this.store, this.embedding, query, { k, ...opts }, this.weights);
+    }
+
+    const pool = opts.rerankPool ?? Math.max(k * 4, 20);
+    const candidates = await hybridRecall(
+      this.store,
+      this.embedding,
+      query,
+      { ...opts, k: pool, markUsed: false },
+      this.weights,
+    );
+    const ranked = await llmRerank(this.llm!, query, candidates, k);
+    if (opts.markUsed) this.store.markUsed(ranked.map((r) => r.id));
+    return ranked;
+  }
+
+  /**
+   * Rate a memory's long-term importance (0..1) using the configured LLM.
+   * Returns 0.5 (neutral) if no LLM is set or the call fails. Opt-in helper for
+   * auto-scoring salience at write time.
+   */
+  async rateImportance(text: string): Promise<number> {
+    if (!this.llm) return 0.5;
+    const prompt =
+      `Rate how important this memory is for an agent to remember long-term, ` +
+      `on a scale of 1 (trivial) to 10 (critical). Consider consequence, ` +
+      `surprise, and reusability. Reply with ONLY the number.\n\nMemory: ${text}`;
+    try {
+      const resp = await this.llm.complete(prompt);
+      const m = resp.match(/\d+(\.\d+)?/);
+      if (!m) return 0.5;
+      const n = Number.parseFloat(m[0]);
+      return Math.min(1, Math.max(0, n > 1 ? n / 10 : n));
+    } catch {
+      return 0.5;
+    }
   }
 
   /** Format recall results as a prompt-ready context block for any agent. */

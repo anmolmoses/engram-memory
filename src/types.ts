@@ -1,4 +1,5 @@
 import type { EmbeddingConfig } from "./embeddings/provider.js";
+import type { LLMConfig } from "./llm/provider.js";
 
 /** A memory to be stored. Only `content` is required. */
 export interface MemoryInput {
@@ -33,6 +34,11 @@ export interface EngramOptions {
   dbPath?: string;
   /** Embedding provider or config. Defaults to the offline hashing provider. */
   embedding?: EmbeddingConfig;
+  /**
+   * Optional LLM (subscription CLI: claude/codex, or custom) used for reranking
+   * and importance scoring. Omit to run in pure hybrid-search mode.
+   */
+  llm?: LLMConfig;
   defaultK?: number;
   weights?: Partial<RecallWeights>;
 }
@@ -46,6 +52,10 @@ export interface RecallOptions {
   markUsed?: boolean;
   /** Candidates pulled from each channel before fusion (default 50). */
   candidatePool?: number;
+  /** Rerank hybrid candidates with the configured LLM. No-op if no LLM is set. */
+  rerank?: boolean;
+  /** How many hybrid candidates to hand the reranker (default max(k*4, 20)). */
+  rerankPool?: number;
 }
 
 export interface RecallResult {

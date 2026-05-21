@@ -118,18 +118,66 @@ const mem = new Engram({
 Or implement the `EmbeddingProvider` interface (`{ name, dim, embed(texts) }`) for a
 local model, Cohere, Voyage, etc. Nothing else in your code changes.
 
+## Use your existing subscription (no API key)
+
+engram can use the **Claude or ChatGPT subscription you already pay for** — via
+their command-line tools — to *rerank* recalled memories (and optionally rate
+importance). It shells out to `claude -p` or `codex exec`; no API key, no separate
+billing.
+
+```ts
+const mem = new Engram({
+  dbPath: "agent-memory.db",
+  llm: { provider: "claude-cli", model: "sonnet" },   // your Claude subscription
+  // llm: { provider: "codex-cli", model: "gpt-5-codex" }, // your ChatGPT/Codex subscription
+});
+
+const hits = await mem.recall("what bit us last release?", { k: 5, rerank: true });
+```
+
+How rerank works: hybrid search produces a larger candidate pool (cheap, local),
+then the LLM **reads the actual text and reorders by true relevance**. On any
+failure it falls back to the hybrid order — reranking never makes recall worse.
+
+```bash
+# from the shell, using your Claude subscription:
+engram recall "trust an agent that says it's done?" --llm claude --llm-model sonnet --rerank
+
+# silent tmux invocation (for environments that prefer a tmux/TTY context):
+engram recall "..." --llm claude --rerank --tmux
+```
+
+**Configure once** in `engram.config.json` (see `engram.config.example.json`):
+
+```json
+{ "dbPath": "agent-memory.db",
+  "llm": { "provider": "claude-cli", "model": "sonnet", "useTmux": false },
+  "rerank": true }
+```
+
+Providers & models are configurable:
+
+| Provider | Subscription | Models (`--llm-model`) | Prereq |
+|----------|--------------|------------------------|--------|
+| `claude-cli` | Claude (Max/Pro) | `sonnet`, `opus`, `haiku`, or full id | `claude` logged in |
+| `codex-cli` | ChatGPT/Codex | `gpt-5-codex`, etc. | `codex login` + readable `~/.codex` |
+| `command` | anything | n/a | any text-in/out CLI (e.g. `ollama run llama3`) |
+
+For any other local model, use `{ provider: "command", command: "ollama", args: ["run","llama3"] }`.
+
 ## CLI
 
 ```bash
 engram index <dir>        # index .md/.txt files (--fresh for a clean rebuild)
-engram recall "<query>"   # -k N, --tier T, --json, --mark-used
+engram recall "<query>"   # -k N, --tier T, --rerank, --json, --mark-used
 engram add "<text>"       # --tier, --importance, --source
 engram stats              # index statistics
 engram help
 ```
 
-Common flags: `--db <path>` (or `$ENGRAM_DB`), `--provider hashing|openai`,
-`--model`, `--dim`, `--openai-key`.
+Common flags: `--db <path>` (or `$ENGRAM_DB`), `--config <path>`,
+`--provider hashing|openai`, `--model`, `--dim`, `--openai-key`.
+LLM flags: `--llm claude|codex|none`, `--llm-model <name>`, `--tmux`, `--rerank`.
 
 ## How it works (in one paragraph)
 
@@ -149,8 +197,10 @@ engram/
     engram.ts            # the public Engram orchestrator
     index.ts             # public API exports
     cli.ts               # command-line interface
+    config.ts            # engram.config.json loader
     store/               # SQLite + FTS5 storage (swappable behind MemoryStore)
     embeddings/          # pluggable providers (hashing default, openai optional)
+    llm/                 # subscription-CLI providers (claude, codex, command)
     ingest/              # markdown frontmatter + chunking
     retrieval/           # hybrid RRF fusion + scoring
     util/                # hashing, cosine, frontmatter, tokenisation

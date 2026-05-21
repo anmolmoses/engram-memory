@@ -22,6 +22,7 @@ first stage of a larger human-inspired associative-memory design (graph recall a
 | 7 | [API & CLI](07-api-and-cli.md) | The `Engram` surface and command-line tool |
 | 8 | [Evaluation](08-evaluation.md) | Test strategy, worked recall results, real-world demo |
 | 9 | [Limitations & roadmap](09-limitations-and-roadmap.md) | Honest limits and Phases 2–4 |
+| 10 | [LLM via subscription CLIs](10-llm-and-subscriptions.md) | Reranking & importance using your Claude/ChatGPT plan (no API key) |
 
 ## Reading guide
 
