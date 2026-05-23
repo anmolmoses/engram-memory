@@ -72,6 +72,18 @@ export {
   type LlmEdgeResult,
 } from "./graph/llm-edges.js";
 
+// Consolidation ("dreaming") — Phase 3
+export {
+  consolidate,
+  reinforce,
+  readmit,
+  salience,
+  DEFAULT_SALIENCE,
+  type SalienceWeights,
+  type ConsolidateOptions,
+  type ConsolidateResult,
+} from "./consolidation/consolidate.js";
+
 // Retrieval
 export { recall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
 export { llmRerank, parseOrder } from "./retrieval/rerank.js";

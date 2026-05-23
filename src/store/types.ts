@@ -57,6 +57,11 @@ export interface MemoryRecord {
   updatedAt: number;
   lastUsedAt: number | null;
   useCount: number;
+  /**
+   * Cold-archived by consolidation (Phase 3). Archived memories are excluded
+   * from recall by default but never hard-deleted — re-admitted on a later hit.
+   */
+  archived: boolean;
   embedding: Float32Array | null;
   embeddingModel: string | null;
   embeddingDim: number | null;
@@ -102,6 +107,8 @@ export interface MemoryStore {
   count(): number;
   /** Bump recency/frequency counters for the given ids. */
   markUsed(ids: string[]): void;
+  /** Set the cold-archive flag for the given ids (Phase 3 consolidation). */
+  setArchived(ids: string[], archived: boolean): void;
   stats(): StoreStats;
   close(): void;
 

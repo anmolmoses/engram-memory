@@ -49,6 +49,7 @@ interface MemoryRow {
   updated_at: number;
   last_used_at: number | null;
   use_count: number;
+  archived: number;
   embedding: Buffer | null;
   embedding_model: string | null;
   embedding_dim: number | null;
@@ -87,6 +88,7 @@ function rowToRecord(r: MemoryRow): MemoryRecord {
     updatedAt: r.updated_at,
     lastUsedAt: r.last_used_at,
     useCount: r.use_count,
+    archived: !!r.archived,
     embedding: r.embedding ? decodeVec(r.embedding) : null,
     embeddingModel: r.embedding_model,
     embeddingDim: r.embedding_dim,
@@ -119,6 +121,7 @@ export class SqliteStore implements MemoryStore {
         updated_at    INTEGER NOT NULL,
         last_used_at  INTEGER,
         use_count     INTEGER NOT NULL DEFAULT 0,
+        archived      INTEGER NOT NULL DEFAULT 0,
         embedding     BLOB,
         embedding_model TEXT,
         embedding_dim INTEGER
@@ -157,6 +160,12 @@ export class SqliteStore implements MemoryStore {
       CREATE INDEX IF NOT EXISTS idx_entity_entity ON entity(entity);
       CREATE INDEX IF NOT EXISTS idx_entity_memory ON entity(memory_id);
     `);
+
+    // Additive migration for DBs created before the `archived` column existed.
+    const cols = this.db.prepare(`PRAGMA table_info(memory)`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "archived")) {
+      this.db.exec(`ALTER TABLE memory ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
+    }
   }
 
   upsert(rec: MemoryRecord): void {
@@ -277,6 +286,12 @@ export class SqliteStore implements MemoryStore {
       for (const id of rows) stmt.run(now, id);
     });
     tx(ids);
+  }
+
+  setArchived(ids: string[], archived: boolean): void {
+    if (ids.length === 0) return;
+    const ph = ids.map(() => "?").join(",");
+    this.db.prepare(`UPDATE memory SET archived = ? WHERE id IN (${ph})`).run(archived ? 1 : 0, ...ids);
   }
 
   // --- Associative graph (Phase 2) -----------------------------------------

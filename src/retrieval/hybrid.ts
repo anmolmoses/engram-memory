@@ -76,6 +76,7 @@ export async function recall(
 
   // --- Materialise candidates and apply salience / recency boosts ---
   let records = store.getByIds([...entries.keys()]);
+  if (!opts.includeArchived) records = records.filter((r) => !r.archived);
   if (opts.tier) records = records.filter((r) => r.tier === opts.tier);
 
   const now = Date.now();

@@ -5,6 +5,10 @@ import { ingestDirectory, type IngestOptions } from "./ingest/markdown.js";
 import { buildEdges, type EdgeBuildOptions, type EdgeBuildResult } from "./graph/build.js";
 import { buildLlmEdges, type LlmEdgeOptions, type LlmEdgeResult } from "./graph/llm-edges.js";
 import { extractEntities } from "./graph/entities.js";
+import {
+  consolidate, reinforce, readmit, salience, DEFAULT_SALIENCE,
+  type ConsolidateOptions, type ConsolidateResult,
+} from "./consolidation/consolidate.js";
 import { recall as hybridRecall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
 import { spreadActivation } from "./retrieval/spreading.js";
 import { llmRerank } from "./retrieval/rerank.js";
@@ -115,6 +119,7 @@ export class Engram {
         updatedAt: now,
         lastUsedAt: null,
         useCount: 0,
+        archived: false,
         embedding: emb,
         embeddingModel: this.embedding.name,
         embeddingDim: emb ? emb.length : null,
@@ -168,6 +173,28 @@ export class Engram {
   async buildLlmEdges(opts?: LlmEdgeOptions): Promise<LlmEdgeResult> {
     if (!this.llm) return { caused: 0, supersedes: 0, lesson_from: 0, pairsConsidered: 0, calls: 0 };
     return buildLlmEdges(this.store, this.llm, opts ?? {});
+  }
+
+  /**
+   * Run a consolidation ("dream") pass: cold-archive the lowest-salience
+   * memories beyond `capacity` (value-based forgetting; protected tiers exempt).
+   * Archived memories drop out of recall but are kept and re-admittable.
+   */
+  consolidate(opts?: ConsolidateOptions): ConsolidateResult {
+    return consolidate(this.store, opts ?? {});
+  }
+
+  /** Re-admit cold-archived memories back into recall. */
+  readmit(ids: string[]): void {
+    readmit(this.store, ids);
+  }
+
+  /**
+   * Hebbian reinforcement: strengthen edges among a co-used set of memories
+   * (e.g. the ids returned by one recall). Returns edges reinforced.
+   */
+  reinforce(ids: string[], amount?: number): number {
+    return reinforce(this.store, ids, amount);
   }
 
   /**
@@ -338,6 +365,7 @@ export class Engram {
    */
   graphExport(opts: { labelChars?: number } = {}): GraphExport {
     const labelChars = opts.labelChars ?? 120;
+    const now = Date.now();
     const nodes: GraphNode[] = this.store.allRecords().map((r) => ({
       id: r.id,
       label: r.content.replace(/\s+/g, " ").trim().slice(0, labelChars),
@@ -345,6 +373,8 @@ export class Engram {
       importance: r.importance,
       source: r.source,
       useCount: r.useCount,
+      archived: r.archived,
+      salience: salience(r, now, DEFAULT_SALIENCE),
     }));
     const edges: GraphEdgeView[] = this.store.allEdges().map((e) => ({
       src: e.srcId,

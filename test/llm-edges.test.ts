@@ -9,7 +9,7 @@ const now = Date.now();
 function seed(s: SqliteStore) {
   const mk = (id: string, content: string) => ({
     id, content, source: "x.md", tier: null, importance: 0.5, metadata: null,
-    contentHash: "h", createdAt: 1, updatedAt: 1, lastUsedAt: null, useCount: 0,
+    contentHash: "h", createdAt: 1, updatedAt: 1, lastUsedAt: null, useCount: 0, archived: false,
     embedding: null, embeddingModel: null, embeddingDim: null,
   });
   s.upsertMany([

@@ -56,6 +56,8 @@ export interface RecallOptions {
   weights?: Partial<RecallWeights>;
   /** Restrict to a single tier (episodic/semantic/procedural/...). */
   tier?: string;
+  /** Include cold-archived memories (Phase 3). Default false. */
+  includeArchived?: boolean;
   /** Bump recency/use-count counters on the returned memories (default false). */
   markUsed?: boolean;
   /** Candidates pulled from each channel before fusion (default 50). */
@@ -114,6 +116,10 @@ export interface GraphNode {
   importance: number;
   source: string | null;
   useCount: number;
+  /** Cold-archived by consolidation (Phase 3). */
+  archived: boolean;
+  /** Consolidation salience (recency × frequency × importance blend). */
+  salience: number;
 }
 
 export interface GraphEdgeView {

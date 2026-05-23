@@ -22,7 +22,7 @@ test("entity glossary: setEntities + memoriesForEntity round-trip, cascade delet
   const s = new SqliteStore(":memory:");
   const mk = (id: string, source: string) => ({
     id, content: `c ${id}`, source, tier: null, importance: 0.5, metadata: null,
-    contentHash: "h", createdAt: 1, updatedAt: 1, lastUsedAt: null, useCount: 0,
+    contentHash: "h", createdAt: 1, updatedAt: 1, lastUsedAt: null, useCount: 0, archived: false,
     embedding: null, embeddingModel: null, embeddingDim: null,
   });
   s.upsertMany([mk("a", "x.md"), mk("b", "x.md")]);

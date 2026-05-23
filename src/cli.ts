@@ -49,6 +49,7 @@ COMMANDS
   recall <query...>    Retrieve the most relevant memories for a query
   add <text...>        Add a single memory
   graph                Export the associative graph (nodes + edges) as JSON
+  dream                Run a consolidation pass (cold-archive low-salience memories)
   stats                Show index statistics
   help                 Show this help
 
@@ -236,6 +237,18 @@ async function main(): Promise<void> {
         const g = engram.graphExport();
         // Default to compact JSON (this feeds the dashboard); --pretty for humans.
         process.stdout.write(`${JSON.stringify(g, null, flags.pretty ? 2 : 0)}\n`);
+        break;
+      }
+
+      case "dream": {
+        const capacity = flags.capacity ? Number(flags.capacity) : undefined;
+        const res = engram.consolidate({ capacity });
+        process.stdout.write(
+          flags.json
+            ? `${JSON.stringify(res)}\n`
+            : `Dreamed: scored ${res.scored}, kept ${res.kept}, archived ${res.archived} ` +
+              `(${res.protectedCount} protected).\n`,
+        );
         break;
       }
 

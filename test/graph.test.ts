@@ -26,7 +26,7 @@ test("temporal_next chains memories within a source by creation time", () => {
   const s = new SqliteStore(":memory:");
   const mk = (id: string, t: number, source: string | null) => ({
     id, content: `note ${id}`, source, tier: null, importance: 0.5, metadata: null,
-    contentHash: "h", createdAt: t, updatedAt: t, lastUsedAt: null, useCount: 0,
+    contentHash: "h", createdAt: t, updatedAt: t, lastUsedAt: null, useCount: 0, archived: false,
     embedding: null, embeddingModel: null, embeddingDim: null,
   });
   // Out of order on purpose; two sources.
