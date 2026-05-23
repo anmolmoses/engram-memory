@@ -3,6 +3,7 @@ import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddings/pr
 import { createLLMProvider, type LLMProvider } from "./llm/provider.js";
 import { ingestDirectory, type IngestOptions } from "./ingest/markdown.js";
 import { buildEdges, type EdgeBuildOptions, type EdgeBuildResult } from "./graph/build.js";
+import { buildLlmEdges, type LlmEdgeOptions, type LlmEdgeResult } from "./graph/llm-edges.js";
 import { extractEntities } from "./graph/entities.js";
 import { recall as hybridRecall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
 import { spreadActivation } from "./retrieval/spreading.js";
@@ -156,6 +157,17 @@ export class Engram {
    */
   buildEdges(opts?: EdgeBuildOptions): EdgeBuildResult {
     return buildEdges(this.store, opts ?? {});
+  }
+
+  /**
+   * Derive semantic edges (`caused`, `supersedes`, `lesson_from`) by having the
+   * configured LLM classify the graph's already-related pairs. Returns a count
+   * of each kind. No-op (zeros) when no LLM is configured. Run after
+   * `buildEdges`/`indexDirectory`, since it seeds from the structural edges.
+   */
+  async buildLlmEdges(opts?: LlmEdgeOptions): Promise<LlmEdgeResult> {
+    if (!this.llm) return { caused: 0, supersedes: 0, lesson_from: 0, pairsConsidered: 0, calls: 0 };
+    return buildLlmEdges(this.store, this.llm, opts ?? {});
   }
 
   /**

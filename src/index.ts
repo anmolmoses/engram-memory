@@ -65,6 +65,12 @@ export {
   type EdgeBuildResult,
 } from "./graph/build.js";
 export { extractEntities } from "./graph/entities.js";
+export {
+  buildLlmEdges,
+  parseRelations,
+  type LlmEdgeOptions,
+  type LlmEdgeResult,
+} from "./graph/llm-edges.js";
 
 // Retrieval
 export { recall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";

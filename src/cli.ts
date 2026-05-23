@@ -69,6 +69,8 @@ index OPTIONS
   --chunk <mode>       auto (default) | file | paragraph | heading
   --fresh              Wipe the index before indexing (clean rebuild)
   --no-graph           Skip building the associative graph (edges)
+  --llm-edges          After indexing, derive caused/supersedes/lesson_from
+                       edges with the configured LLM (needs --llm)
 
 recall OPTIONS
   -k <n>               Number of results (default: 8)
@@ -151,6 +153,18 @@ async function main(): Promise<void> {
             `in ${res.directory} (${res.durationMs}ms, pruned ${res.pruned}, model ${res.embeddingModel}).\n` +
             (flags["no-graph"] ? "" : `Associative graph: ${engram.stats().edges} edges.\n`),
         );
+        if (flags["llm-edges"]) {
+          if (!engram.llm) {
+            process.stderr.write("Note: --llm-edges needs an LLM; pass --llm claude (or codex).\n");
+          } else {
+            process.stdout.write("Deriving semantic edges with the LLM…\n");
+            const le = await engram.buildLlmEdges();
+            process.stdout.write(
+              `LLM edges: caused ${le.caused}, supersedes ${le.supersedes}, lesson_from ${le.lesson_from} ` +
+                `(from ${le.pairsConsidered} pairs, ${le.calls} calls).\n`,
+            );
+          }
+        }
         break;
       }
 
