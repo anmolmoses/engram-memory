@@ -5,6 +5,7 @@ import { ingestDirectory, type IngestOptions } from "./ingest/markdown.js";
 import { buildEdges, type EdgeBuildOptions, type EdgeBuildResult } from "./graph/build.js";
 import { buildLlmEdges, type LlmEdgeOptions, type LlmEdgeResult } from "./graph/llm-edges.js";
 import { extractEntities } from "./graph/entities.js";
+import { tagMemories as tagMemoriesImpl, type MemoryTags } from "./enrich/tagging.js";
 import {
   consolidate, reinforce, readmit, salience, DEFAULT_SALIENCE,
   type ConsolidateOptions, type ConsolidateResult,
@@ -227,6 +228,15 @@ export class Engram {
   /** Re-admit cold-archived memories back into recall. */
   readmit(ids: string[]): void {
     readmit(this.store, ids);
+  }
+
+  /**
+   * Tag memory texts with structure + emotion + importance + people + topic
+   * using the configured LLM (heuristic neutral/episodic fallback without one).
+   * Returns one tag set per input, in order. Used to enrich captured memories.
+   */
+  async tagMemories(texts: string[]): Promise<MemoryTags[]> {
+    return tagMemoriesImpl(this.llm, texts);
   }
 
   /**

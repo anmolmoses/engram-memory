@@ -65,6 +65,7 @@ export {
   type EdgeBuildResult,
 } from "./graph/build.js";
 export { extractEntities } from "./graph/entities.js";
+export { tagMemories, parseTags, type MemoryTags } from "./enrich/tagging.js";
 export {
   buildLlmEdges,
   parseRelations,

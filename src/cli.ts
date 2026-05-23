@@ -49,6 +49,7 @@ COMMANDS
   recall <query...>    Retrieve the most relevant memories for a query
   add <text...>        Add a single memory
   graph                Export the associative graph (nodes + edges) as JSON
+  tag <text>           Tag a memory (tier/importance/emotion/topic/people) as JSON
   dream                Run a consolidation pass (cold-archive low-salience memories)
   eval <file.json>     Score recall@k against a labelled set ([{query,relevantIds}])
   stats                Show index statistics
@@ -235,6 +236,31 @@ async function main(): Promise<void> {
           importance: flags.importance ? Number(flags.importance) : undefined,
         });
         process.stdout.write(flags.json ? `${JSON.stringify({ id })}\n` : `Added memory ${id}\n`);
+        break;
+      }
+
+      case "tag": {
+        // Texts come from a positional arg, or a JSON array of strings on stdin
+        // (for batch tagging). Emits a JSON array of MemoryTags (order preserved).
+        let texts: string[];
+        const positional = positionals.slice(1).join(" ").trim();
+        if (positional) {
+          texts = [positional];
+        } else if (!process.stdin.isTTY) {
+          const chunks: Buffer[] = [];
+          for await (const c of process.stdin) chunks.push(c as Buffer);
+          const stdin = Buffer.concat(chunks).toString("utf-8").trim();
+          try {
+            const parsed = JSON.parse(stdin || "[]");
+            texts = Array.isArray(parsed) ? parsed.map(String) : [String(parsed)];
+          } catch {
+            texts = stdin ? [stdin] : [];
+          }
+        } else {
+          texts = [];
+        }
+        const tags = await engram.tagMemories(texts);
+        process.stdout.write(`${JSON.stringify(tags)}\n`);
         break;
       }
 

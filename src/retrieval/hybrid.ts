@@ -7,7 +7,10 @@ export const DEFAULT_WEIGHTS: RecallWeights = {
   semantic: 1,
   lexical: 1,
   importance: 0.5,
-  recency: 0,
+  // Recency on by default: fresh memories (e.g. just-captured conversations)
+  // get a moderate lift so a thing you told Friday moments ago ranks above
+  // stale matches. Gentle enough not to drown clear relevance.
+  recency: 0.4,
   activation: 1,
   rrfK: 60,
   recencyHalfLifeDays: 30,

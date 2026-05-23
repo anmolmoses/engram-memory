@@ -1,0 +1,111 @@
+/**
+ * Memory tagging — structured + emotional metadata for each memory.
+ *
+ * A raw captured exchange is just text. To store it the way a brain does, we
+ * tag it: what KIND of memory is it (episodic event vs semantic fact vs
+ * procedural how-to — the structure/tier), how IMPORTANT is it, what EMOTION
+ * does it carry and how strongly, what's it ABOUT, and WHO is involved. Those
+ * tags drive the short/long-term split, salience-based consolidation, and
+ * affect-aware recall.
+ *
+ * Tagging uses the configured LLM (the user's subscription CLI). Without an LLM,
+ * a safe heuristic fallback keeps everything working (episodic, neutral).
+ */
+
+import type { LLMProvider } from "../llm/provider.js";
+
+export interface MemoryTags {
+  /** Structure: episodic (an event), semantic (a durable fact/rule), procedural (a how-to), working (transient). */
+  tier: "episodic" | "semantic" | "procedural" | "working";
+  /** Long-term importance 0..1. */
+  importance: number;
+  /** One-word emotional tone (neutral, positive, frustrated, excited, anxious, proud, …). */
+  emotion: string;
+  /** Emotional intensity 0..1. */
+  emotionIntensity: number;
+  /** 1–3 word topic label. */
+  topic: string;
+  /** People/handles involved (lowercase, no @). */
+  people: string[];
+  /** One concise sentence capturing the gist. */
+  summary: string;
+}
+
+const FALLBACK: MemoryTags = {
+  tier: "episodic", importance: 0.5, emotion: "neutral",
+  emotionIntensity: 0, topic: "", people: [], summary: "",
+};
+
+function clampUnit(n: unknown): number {
+  const x = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(x)) return 0.5;
+  return Math.min(1, Math.max(0, x > 1 ? x / 10 : x));
+}
+
+const VALID_TIERS = new Set(["episodic", "semantic", "procedural", "working"]);
+
+function coerce(o: Record<string, unknown>, fallbackSummary: string): MemoryTags {
+  const tier = String(o.tier ?? "").toLowerCase();
+  const people = Array.isArray(o.people)
+    ? o.people.filter((p): p is string => typeof p === "string").map((p) => p.replace(/^@/, "").toLowerCase())
+    : [];
+  return {
+    tier: (VALID_TIERS.has(tier) ? tier : "episodic") as MemoryTags["tier"],
+    importance: clampUnit(o.importance),
+    emotion: typeof o.emotion === "string" && o.emotion ? o.emotion.toLowerCase() : "neutral",
+    emotionIntensity: clampUnit(o.emotionIntensity),
+    topic: typeof o.topic === "string" ? o.topic.slice(0, 60) : "",
+    people,
+    summary: typeof o.summary === "string" && o.summary ? o.summary : fallbackSummary,
+  };
+}
+
+/** Extract the first JSON array from an LLM reply. */
+export function parseTags(resp: string): Record<string, unknown>[] {
+  const m = resp.match(/\[[\s\S]*\]/);
+  if (!m) return [];
+  try {
+    const arr = JSON.parse(m[0]) as unknown;
+    return Array.isArray(arr) ? (arr.filter((o) => o && typeof o === "object") as Record<string, unknown>[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function buildPrompt(texts: string[]): string {
+  const items = texts.map((t, i) => `[${i + 1}] ${t.replace(/\s+/g, " ").slice(0, 700)}`).join("\n");
+  return (
+    `You tag memories for an AI agent's memory system. For each numbered item, classify:\n` +
+    `- "tier": episodic (a specific event/conversation), semantic (a durable fact/rule/preference), or procedural (a how-to/process)\n` +
+    `- "importance": 0.0-1.0 — worth remembering long-term? (consequence, reusability, surprise)\n` +
+    `- "emotion": one lowercase word for the tone (neutral, positive, negative, frustrated, excited, anxious, proud, amused, …)\n` +
+    `- "emotionIntensity": 0.0-1.0\n` +
+    `- "topic": 1-3 word label\n` +
+    `- "people": array of names/handles mentioned (lowercase, no @; [] if none)\n` +
+    `- "summary": one concise sentence\n\n` +
+    `Items:\n${items}\n\n` +
+    `Reply with ONLY a JSON array, one object per item, in order. No prose.`
+  );
+}
+
+/**
+ * Tag a batch of memory texts. Returns one MemoryTags per input (order
+ * preserved). Falls back to neutral/episodic for any item on LLM failure or a
+ * short/empty reply — tagging never blocks capture.
+ */
+export async function tagMemories(llm: LLMProvider | null, texts: string[]): Promise<MemoryTags[]> {
+  if (texts.length === 0) return [];
+  const fallback = texts.map((t) => ({ ...FALLBACK, summary: t.replace(/\s+/g, " ").slice(0, 120) }));
+  if (!llm) return fallback;
+
+  let resp: string;
+  try {
+    resp = await llm.complete(buildPrompt(texts));
+  } catch {
+    return fallback;
+  }
+  const parsed = parseTags(resp);
+  return texts.map((t, i) =>
+    parsed[i] ? coerce(parsed[i]!, t.replace(/\s+/g, " ").slice(0, 120)) : fallback[i]!,
+  );
+}
