@@ -441,16 +441,22 @@ export class Engram {
   graphExport(opts: { labelChars?: number } = {}): GraphExport {
     const labelChars = opts.labelChars ?? 120;
     const now = Date.now();
-    const nodes: GraphNode[] = this.store.allRecords().map((r) => ({
-      id: r.id,
-      label: r.content.replace(/\s+/g, " ").trim().slice(0, labelChars),
-      tier: r.tier,
-      importance: r.importance,
-      source: r.source,
-      useCount: r.useCount,
-      archived: r.archived,
-      salience: salience(r, now, DEFAULT_SALIENCE),
-    }));
+    const nodes: GraphNode[] = this.store.allRecords().map((r) => {
+      const md = (r.metadata ?? {}) as Record<string, unknown>;
+      return {
+        id: r.id,
+        label: r.content.replace(/\s+/g, " ").trim().slice(0, labelChars),
+        tier: r.tier,
+        importance: r.importance,
+        source: r.source,
+        useCount: r.useCount,
+        archived: r.archived,
+        salience: salience(r, now, DEFAULT_SALIENCE),
+        emotion: typeof md.emotion === "string" ? md.emotion : undefined,
+        emotionIntensity: typeof md.emotion_intensity === "number" ? md.emotion_intensity : undefined,
+        topic: typeof md.topic === "string" && md.topic ? md.topic : undefined,
+      };
+    });
     const edges: GraphEdgeView[] = this.store.allEdges().map((e) => ({
       src: e.srcId,
       dst: e.dstId,

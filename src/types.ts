@@ -126,6 +126,12 @@ export interface GraphNode {
   archived: boolean;
   /** Consolidation salience (recency × frequency × importance blend). */
   salience: number;
+  /** Emotional tone tag, if the memory was enriched (e.g. "frustrated"). */
+  emotion?: string;
+  /** Emotional intensity 0..1. */
+  emotionIntensity?: number;
+  /** Topic tag, if enriched. */
+  topic?: string;
 }
 
 export interface GraphEdgeView {
