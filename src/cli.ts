@@ -50,6 +50,7 @@ COMMANDS
   add <text...>        Add a single memory
   graph                Export the associative graph (nodes + edges) as JSON
   dream                Run a consolidation pass (cold-archive low-salience memories)
+  eval <file.json>     Score recall@k against a labelled set ([{query,relevantIds}])
   stats                Show index statistics
   help                 Show this help
 
@@ -84,6 +85,7 @@ recall OPTIONS
                        per-node activation + provenance) — for visualisation
   --rerank             Rerank candidates with the configured LLM (better recall)
   --mark-used          Bump recency/use counters on returned memories
+  --reinforce          Hebbian: strengthen edges among the co-retrieved results
   --json               Output raw JSON
 
 EXAMPLES
@@ -188,6 +190,7 @@ async function main(): Promise<void> {
           k: flags.k ? Number(flags.k) : undefined,
           tier: (flags.tier as string) || undefined,
           markUsed: Boolean(flags["mark-used"]),
+          reinforce: Boolean(flags.reinforce),
           rerank,
           associative,
           spread,
@@ -249,6 +252,36 @@ async function main(): Promise<void> {
             : `Dreamed: scored ${res.scored}, kept ${res.kept}, archived ${res.archived} ` +
               `(${res.protectedCount} protected).\n`,
         );
+        break;
+      }
+
+      case "eval": {
+        const file = positionals[1];
+        if (!file) throw new Error("eval requires a <file.json> labelled set");
+        const { readFileSync } = await import("node:fs");
+        const set = JSON.parse(readFileSync(file, "utf-8")) as Array<{ query: string; relevantIds: string[] }>;
+        const { evaluate, tuneWeights } = await import("./eval/recall-eval.js");
+        const k = flags.k ? Number(flags.k) : 8;
+        const associative = Boolean(flags.associative);
+        if (flags.tune) {
+          const t = await tuneWeights(
+            engram, set,
+            { semantic: [0.5, 1, 2], lexical: [0.5, 1, 2], importance: [0, 0.5, 1] },
+            { k, recall: { associative } },
+          );
+          process.stdout.write(
+            `Tuned recall@${k}: ${t.baseline.toFixed(3)} → ${t.bestScore.toFixed(3)} ` +
+              `with weights ${JSON.stringify(t.best)} (${t.trials.length} trials).\n`,
+          );
+        } else {
+          const m = await evaluate(engram, set, { k, recall: { associative } });
+          process.stdout.write(
+            flags.json
+              ? `${JSON.stringify(m, null, 2)}\n`
+              : `Eval (${m.queries} queries, k=${k}): recall@k ${m.recallAtK.toFixed(3)}, ` +
+                `MRR ${m.mrr.toFixed(3)}, hit@1 ${m.hitAt1.toFixed(3)}.\n`,
+          );
+        }
         break;
       }
 

@@ -58,6 +58,12 @@ export interface RecallOptions {
   tier?: string;
   /** Include cold-archived memories (Phase 3). Default false. */
   includeArchived?: boolean;
+  /**
+   * Hebbian reinforcement (Phase 4): after recall, strengthen the edges among
+   * the returned memories so frequently co-retrieved memories cluster. Default
+   * false. Best paired with markUsed.
+   */
+  reinforce?: boolean;
   /** Bump recency/use-count counters on the returned memories (default false). */
   markUsed?: boolean;
   /** Candidates pulled from each channel before fusion (default 50). */

@@ -10,6 +10,7 @@ import {
   type ConsolidateOptions, type ConsolidateResult,
 } from "./consolidation/consolidate.js";
 import { recall as hybridRecall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
+import { cosine } from "./util/cosine.js";
 import { spreadActivation } from "./retrieval/spreading.js";
 import { llmRerank } from "./retrieval/rerank.js";
 import { sha256 } from "./util/hash.js";
@@ -206,6 +207,11 @@ export class Engram {
   async recall(query: string, opts: RecallOptions = {}): Promise<RecallResult[]> {
     const k = opts.k ?? this.defaultK;
     const doRerank = Boolean(opts.rerank) && this.llm !== null;
+    // Hebbian: optionally strengthen edges among the co-retrieved results.
+    const fin = (out: RecallResult[]): RecallResult[] => {
+      if (opts.reinforce && out.length > 1) this.reinforce(out.map((r) => r.id));
+      return out;
+    };
 
     if (opts.associative) {
       const { results: ranked } = await this.associativeRecall(query, opts);
@@ -213,14 +219,14 @@ export class Engram {
       if (doRerank) {
         const out = await llmRerank(this.llm!, query, ranked, k);
         if (opts.markUsed) this.store.markUsed(out.map((r) => r.id));
-        return out;
+        return fin(out);
       }
       if (opts.markUsed) this.store.markUsed(ranked.slice(0, k).map((r) => r.id));
-      return ranked.slice(0, k);
+      return fin(ranked.slice(0, k));
     }
 
     if (!doRerank) {
-      return hybridRecall(this.store, this.embedding, query, { k, ...opts }, this.weights);
+      return fin(await hybridRecall(this.store, this.embedding, query, { k, ...opts }, this.weights));
     }
 
     const pool = opts.rerankPool ?? Math.max(k * 4, 20);
@@ -233,7 +239,25 @@ export class Engram {
     );
     const ranked = await llmRerank(this.llm!, query, candidates, k);
     if (opts.markUsed) this.store.markUsed(ranked.map((r) => r.id));
-    return ranked;
+    return fin(ranked);
+  }
+
+  /**
+   * Bayesian-surprise-style novelty of a piece of text: 1 − its maximum cosine
+   * similarity to anything already stored (1 = wholly novel, 0 = a duplicate).
+   * A cheap, offline importance signal — surprising memories tend to matter.
+   * Returns 1 for an empty store (everything is novel at first).
+   */
+  async surprise(content: string): Promise<number> {
+    const [emb] = await this.embedding.embed([content]);
+    if (!emb) return 0.5;
+    let maxSim = 0;
+    for (const v of this.store.allVectors()) {
+      if (v.dim !== this.embedding.dim) continue;
+      const s = cosine(emb, v.embedding);
+      if (s > maxSim) maxSim = s;
+    }
+    return Math.max(0, Math.min(1, 1 - maxSim));
   }
 
   /**
@@ -354,8 +378,10 @@ export class Engram {
   async recallTrace(query: string, opts: RecallOptions = {}): Promise<RecallTraceResult> {
     const k = opts.k ?? this.defaultK;
     const { results, trace } = await this.associativeRecall(query, { ...opts, associative: true });
-    if (opts.markUsed) this.store.markUsed(results.slice(0, k).map((r) => r.id));
-    return { results: results.slice(0, k), trace };
+    const top = results.slice(0, k);
+    if (opts.markUsed) this.store.markUsed(top.map((r) => r.id));
+    if (opts.reinforce && top.length > 1) this.reinforce(top.map((r) => r.id));
+    return { results: top, trace };
   }
 
   /**

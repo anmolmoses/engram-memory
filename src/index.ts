@@ -72,6 +72,15 @@ export {
   type LlmEdgeResult,
 } from "./graph/llm-edges.js";
 
+// Evaluation + weight tuning — Phase 4
+export {
+  evaluate,
+  tuneWeights,
+  type LabeledQuery,
+  type EvalMetrics,
+  type TuneResult,
+} from "./eval/recall-eval.js";
+
 // Consolidation ("dreaming") — Phase 3
 export {
   consolidate,
