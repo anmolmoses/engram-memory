@@ -443,6 +443,11 @@ export class Engram {
     const now = Date.now();
     const nodes: GraphNode[] = this.store.allRecords().map((r) => {
       const md = (r.metadata ?? {}) as Record<string, unknown>;
+      // Frontmatter `metadata:` is nested under record.metadata.metadata; fall
+      // back to the top level for memories tagged a different way.
+      const inner = (md.metadata && typeof md.metadata === "object" ? md.metadata : md) as Record<string, unknown>;
+      const emotion = typeof inner.emotion === "string" ? inner.emotion : undefined;
+      const ei = inner.emotion_intensity ?? inner.emotionIntensity;
       return {
         id: r.id,
         label: r.content.replace(/\s+/g, " ").trim().slice(0, labelChars),
@@ -452,9 +457,9 @@ export class Engram {
         useCount: r.useCount,
         archived: r.archived,
         salience: salience(r, now, DEFAULT_SALIENCE),
-        emotion: typeof md.emotion === "string" ? md.emotion : undefined,
-        emotionIntensity: typeof md.emotion_intensity === "number" ? md.emotion_intensity : undefined,
-        topic: typeof md.topic === "string" && md.topic ? md.topic : undefined,
+        emotion,
+        emotionIntensity: typeof ei === "number" ? ei : undefined,
+        topic: typeof inner.topic === "string" && inner.topic ? inner.topic : undefined,
       };
     });
     const edges: GraphEdgeView[] = this.store.allEdges().map((e) => ({
