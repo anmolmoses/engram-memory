@@ -117,6 +117,8 @@ export interface MemoryStore {
   edgesFrom(ids: string[], types?: EdgeType[]): MemoryEdge[];
   /** Every edge incident to `id` in either direction (for inspection/audit). */
   edgesFor(id: string): MemoryEdge[];
+  /** All edges in the graph (for export / visualisation). */
+  allEdges(): MemoryEdge[];
   /** Remove every edge touching any of `ids` (either endpoint). Returns rows deleted. */
   deleteEdgesFor(ids: string[]): number;
   edgeCount(): number;

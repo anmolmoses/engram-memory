@@ -16,6 +16,12 @@ import type {
   RecallOptions,
   RecallResult,
   RecallWeights,
+  GraphExport,
+  GraphNode,
+  GraphEdgeView,
+  RecallTraceResult,
+  TraceSeed,
+  TraceActivation,
 } from "./types.js";
 
 /**
@@ -163,7 +169,7 @@ export class Engram {
     const doRerank = Boolean(opts.rerank) && this.llm !== null;
 
     if (opts.associative) {
-      const ranked = await this.associativeRecall(query, k, opts);
+      const { results: ranked } = await this.associativeRecall(query, opts);
       // Rerank composes on top of associative recall when an LLM is configured.
       if (doRerank) {
         const out = await llmRerank(this.llm!, query, ranked, k);
@@ -200,9 +206,8 @@ export class Engram {
    */
   private async associativeRecall(
     query: string,
-    k: number,
     opts: RecallOptions,
-  ): Promise<RecallResult[]> {
+  ): Promise<RecallTraceResult> {
     const w: RecallWeights = { ...this.weights, ...(opts.weights ?? {}) };
     // Seed from a broad hybrid pool so activation starts from solid relevance.
     const pool = opts.candidatePool ?? 50;
@@ -218,6 +223,11 @@ export class Engram {
     for (const r of seedsResults) byId.set(r.id, r);
 
     const seeds = new Map<string, number>(seedsResults.map((r) => [r.id, r.score]));
+    const traceSeeds: TraceSeed[] = seedsResults.map((r) => ({
+      id: r.id,
+      score: r.score,
+      kind: "hybrid",
+    }));
 
     // Query-entity seeding: memories tagged with an entity the query mentions
     // are precise, topic-level hits — seed them directly (and surface them) so
@@ -232,7 +242,10 @@ export class Engram {
       const fresh = this.store.getByIds([...matched.keys()].filter((id) => !byId.has(id)));
       const freshById = new Map(fresh.map((r) => [r.id, r]));
       for (const [id, entity] of matched) {
-        if (!seeds.has(id)) seeds.set(id, ENTITY_SEED);
+        if (!seeds.has(id)) {
+          seeds.set(id, ENTITY_SEED);
+          traceSeeds.push({ id, score: ENTITY_SEED, kind: "entity", entity });
+        }
         if (byId.has(id)) continue;
         const rec = freshById.get(id);
         if (!rec) continue;
@@ -257,6 +270,7 @@ export class Engram {
     const newIds = [...activated.keys()].filter((id) => !byId.has(id));
     const fresh = this.store.getByIds(newIds);
     const freshById = new Map(fresh.map((r) => [r.id, r]));
+    const activations: TraceActivation[] = [];
 
     for (const [id, act] of activated) {
       const lift = w.activation * act.activation;
@@ -266,6 +280,7 @@ export class Engram {
         existing.score += lift;
         existing.scores.activation = act.activation;
         existing.why += ` · +${trace}`;
+        activations.push({ id, activation: act.activation, via: act.via });
         continue;
       }
       const rec = freshById.get(id);
@@ -282,12 +297,50 @@ export class Engram {
         metadata: rec.metadata,
         why: `associative: ${trace}`,
       });
+      activations.push({ id, activation: act.activation, via: act.via });
     }
 
     let results = [...byId.values()];
     if (opts.tier) results = results.filter((r) => r.tier === opts.tier);
     results.sort((a, b) => b.score - a.score);
-    return results;
+    return { results, trace: { query, seeds: traceSeeds, activations } };
+  }
+
+  /**
+   * Like `recall({ associative: true })`, but also returns the full activation
+   * trace — the seed memories and how much each node was lit up, via which
+   * edge. Powers the dashboard's neuron visualisation and any "why did this
+   * surface" audit. Always runs in associative mode.
+   */
+  async recallTrace(query: string, opts: RecallOptions = {}): Promise<RecallTraceResult> {
+    const k = opts.k ?? this.defaultK;
+    const { results, trace } = await this.associativeRecall(query, { ...opts, associative: true });
+    if (opts.markUsed) this.store.markUsed(results.slice(0, k).map((r) => r.id));
+    return { results: results.slice(0, k), trace };
+  }
+
+  /**
+   * Export the whole associative graph (nodes + edges + stats) for
+   * visualisation. Node content is truncated to a short label to keep the
+   * payload light; fetch full content via `recall`/`store.getById` on demand.
+   */
+  graphExport(opts: { labelChars?: number } = {}): GraphExport {
+    const labelChars = opts.labelChars ?? 120;
+    const nodes: GraphNode[] = this.store.allRecords().map((r) => ({
+      id: r.id,
+      label: r.content.replace(/\s+/g, " ").trim().slice(0, labelChars),
+      tier: r.tier,
+      importance: r.importance,
+      source: r.source,
+      useCount: r.useCount,
+    }));
+    const edges: GraphEdgeView[] = this.store.allEdges().map((e) => ({
+      src: e.srcId,
+      dst: e.dstId,
+      type: e.type,
+      weight: e.weight,
+    }));
+    return { nodes, edges, stats: this.store.stats() };
   }
 
   /**

@@ -16,6 +16,13 @@ export type {
   RecallResult,
   RecallWeights,
   IndexResult,
+  GraphExport,
+  GraphNode,
+  GraphEdgeView,
+  RecallTraceResult,
+  AssociativeTrace,
+  TraceSeed,
+  TraceActivation,
 } from "./types.js";
 export type {
   MemoryRecord,

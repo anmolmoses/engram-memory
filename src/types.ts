@@ -1,6 +1,7 @@
 import type { EmbeddingConfig } from "./embeddings/provider.js";
 import type { LLMConfig } from "./llm/provider.js";
-import type { SpreadOptions } from "./retrieval/spreading.js";
+import type { SpreadOptions, ActivationProvenance } from "./retrieval/spreading.js";
+import type { StoreStats } from "./store/types.js";
 
 /** A memory to be stored. Only `content` is required. */
 export interface MemoryInput {
@@ -101,4 +102,58 @@ export interface IndexResult {
   pruned: number;
   durationMs: number;
   embeddingModel: string;
+}
+
+// --- Graph export + recall trace (for visualisation / audit) ----------------
+
+export interface GraphNode {
+  id: string;
+  /** Truncated content preview (full text omitted to keep exports light). */
+  label: string;
+  tier: string | null;
+  importance: number;
+  source: string | null;
+  useCount: number;
+}
+
+export interface GraphEdgeView {
+  src: string;
+  dst: string;
+  type: string;
+  weight: number;
+}
+
+/** The whole associative graph, ready to render. */
+export interface GraphExport {
+  nodes: GraphNode[];
+  edges: GraphEdgeView[];
+  stats: StoreStats;
+}
+
+export interface TraceSeed {
+  id: string;
+  /** Initial activation injected at this seed. */
+  score: number;
+  /** How it was chosen as a seed. */
+  kind: "hybrid" | "entity";
+  /** For entity seeds: which query entity matched. */
+  entity?: string;
+}
+
+export interface TraceActivation {
+  id: string;
+  activation: number;
+  via: ActivationProvenance;
+}
+
+/** Everything needed to animate a recall: where it started and how it spread. */
+export interface AssociativeTrace {
+  query: string;
+  seeds: TraceSeed[];
+  activations: TraceActivation[];
+}
+
+export interface RecallTraceResult {
+  results: RecallResult[];
+  trace: AssociativeTrace;
 }

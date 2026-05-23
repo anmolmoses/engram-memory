@@ -326,6 +326,11 @@ export class SqliteStore implements MemoryStore {
     return rows.map(rowToEdge);
   }
 
+  allEdges(): MemoryEdge[] {
+    const rows = this.db.prepare(`SELECT * FROM edge`).all() as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
   deleteEdgesFor(ids: string[]): number {
     if (ids.length === 0) return 0;
     const ph = ids.map(() => "?").join(",");

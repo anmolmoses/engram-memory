@@ -48,6 +48,7 @@ COMMANDS
   index <dir>          Index a directory of .md/.txt files into the memory store
   recall <query...>    Retrieve the most relevant memories for a query
   add <text...>        Add a single memory
+  graph                Export the associative graph (nodes + edges) as JSON
   stats                Show index statistics
   help                 Show this help
 
@@ -76,6 +77,8 @@ recall OPTIONS
                        memories that share no words/vectors with the query
   --hops <n>           Spreading hops in associative mode (default: 2)
   --decay <f>          Per-hop attenuation 0..1 in associative mode (default: 0.5)
+  --trace              With --json, include the activation trace (seeds +
+                       per-node activation + provenance) — for visualisation
   --rerank             Rerank candidates with the configured LLM (better recall)
   --mark-used          Bump recency/use counters on returned memories
   --json               Output raw JSON
@@ -158,21 +161,31 @@ async function main(): Promise<void> {
         if (rerank && !engram.llm) {
           process.stderr.write("Note: --rerank requested but no LLM configured; using hybrid order.\n");
         }
-        const associative = Boolean(flags.associative);
+        const trace = Boolean(flags.trace);
+        const associative = Boolean(flags.associative) || trace;
         const spread = associative
           ? {
               hops: flags.hops ? Number(flags.hops) : undefined,
               decay: flags.decay ? Number(flags.decay) : undefined,
             }
           : undefined;
-        const results = await engram.recall(query, {
+        const recallOpts = {
           k: flags.k ? Number(flags.k) : undefined,
           tier: (flags.tier as string) || undefined,
           markUsed: Boolean(flags["mark-used"]),
           rerank,
           associative,
           spread,
-        });
+        };
+
+        // --trace: emit results + the full activation trace (for the dashboard).
+        if (trace) {
+          const out = await engram.recallTrace(query, recallOpts);
+          process.stdout.write(`${JSON.stringify(out, null, flags.json ? 2 : 0)}\n`);
+          break;
+        }
+
+        const results = await engram.recall(query, recallOpts);
         if (flags.json) {
           process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
           break;
@@ -202,6 +215,13 @@ async function main(): Promise<void> {
           importance: flags.importance ? Number(flags.importance) : undefined,
         });
         process.stdout.write(flags.json ? `${JSON.stringify({ id })}\n` : `Added memory ${id}\n`);
+        break;
+      }
+
+      case "graph": {
+        const g = engram.graphExport();
+        // Default to compact JSON (this feeds the dashboard); --pretty for humans.
+        process.stdout.write(`${JSON.stringify(g, null, flags.pretty ? 2 : 0)}\n`);
         break;
       }
 
