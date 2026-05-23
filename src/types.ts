@@ -71,6 +71,12 @@ export interface RecallOptions {
   associative?: boolean;
   /** Tune the spreading-activation diffusion (decay, hops, edge types). */
   spread?: SpreadOptions;
+  /**
+   * In associative mode, also seed activation at memories tagged (in the
+   * glossary) with an entity the query mentions — precise, topic-level recall.
+   * Default true; no-op when the glossary is empty.
+   */
+  entitySeeding?: boolean;
 }
 
 export interface RecallResult {

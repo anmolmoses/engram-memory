@@ -3,6 +3,7 @@ import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddings/pr
 import { createLLMProvider, type LLMProvider } from "./llm/provider.js";
 import { ingestDirectory, type IngestOptions } from "./ingest/markdown.js";
 import { buildEdges, type EdgeBuildOptions, type EdgeBuildResult } from "./graph/build.js";
+import { extractEntities } from "./graph/entities.js";
 import { recall as hybridRecall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
 import { spreadActivation } from "./retrieval/spreading.js";
 import { llmRerank } from "./retrieval/rerank.js";
@@ -16,6 +17,13 @@ import type {
   RecallResult,
   RecallWeights,
 } from "./types.js";
+
+/**
+ * Base activation given to a memory matched by query-entity seeding — roughly
+ * the level of a solid single-channel hybrid hit, so entity matches enter the
+ * results meaningfully without swamping clear lexical/semantic relevance.
+ */
+const ENTITY_SEED = 0.02;
 
 /** Accepts 0..1 directly, or a 1..10 salience scale (auto-divided by 10). */
 function normalizeImportance(v?: number): number {
@@ -210,6 +218,39 @@ export class Engram {
     for (const r of seedsResults) byId.set(r.id, r);
 
     const seeds = new Map<string, number>(seedsResults.map((r) => [r.id, r.score]));
+
+    // Query-entity seeding: memories tagged with an entity the query mentions
+    // are precise, topic-level hits — seed them directly (and surface them) so
+    // they participate even when hybrid relevance missed them entirely.
+    if (opts.entitySeeding !== false) {
+      const matched = new Map<string, string>(); // memoryId → the matched entity
+      for (const e of extractEntities(query)) {
+        for (const id of this.store.memoriesForEntity(e)) {
+          if (!matched.has(id)) matched.set(id, e);
+        }
+      }
+      const fresh = this.store.getByIds([...matched.keys()].filter((id) => !byId.has(id)));
+      const freshById = new Map(fresh.map((r) => [r.id, r]));
+      for (const [id, entity] of matched) {
+        if (!seeds.has(id)) seeds.set(id, ENTITY_SEED);
+        if (byId.has(id)) continue;
+        const rec = freshById.get(id);
+        if (!rec) continue;
+        byId.set(id, {
+          id: rec.id,
+          content: rec.content,
+          source: rec.source,
+          tier: rec.tier,
+          importance: rec.importance,
+          score: ENTITY_SEED,
+          scores: { rrf: 0 },
+          ranks: {},
+          metadata: rec.metadata,
+          why: `entity match: "${entity}"`,
+        });
+      }
+    }
+
     const activated = spreadActivation(this.store, seeds, opts.spread);
 
     // Collect records for activation-only nodes (not already in the hybrid pool).

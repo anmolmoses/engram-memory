@@ -54,8 +54,10 @@ export {
   buildEdges,
   type EdgeBuildOptions,
   type SimilarEdgeOptions,
+  type AboutEdgeOptions,
   type EdgeBuildResult,
 } from "./graph/build.js";
+export { extractEntities } from "./graph/entities.js";
 
 // Retrieval
 export { recall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";

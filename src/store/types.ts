@@ -75,6 +75,8 @@ export interface StoreStats {
   sources: number;
   /** Total directed edges in the associative graph (Phase 2). */
   edges: number;
+  /** Distinct entities in the glossary inverted index (Phase 2). */
+  entities: number;
   dbPath: string;
 }
 
@@ -118,4 +120,14 @@ export interface MemoryStore {
   /** Remove every edge touching any of `ids` (either endpoint). Returns rows deleted. */
   deleteEdgesFor(ids: string[]): number;
   edgeCount(): number;
+
+  // --- Entity glossary (Phase 2) -------------------------------------------
+  /** Replace the set of entities attached to one memory in the inverted index. */
+  setEntities(memoryId: string, entities: string[]): void;
+  /** Memory ids tagged with a given entity (case-insensitive key). */
+  memoriesForEntity(entity: string): string[];
+  /** Every (entity, memoryId) pair — used to build `about` edges in bulk. */
+  entityLinks(): Array<{ entity: string; memoryId: string }>;
+  /** Count of distinct entities in the glossary. */
+  entityCount(): number;
 }

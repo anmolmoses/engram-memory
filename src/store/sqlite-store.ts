@@ -145,6 +145,17 @@ export class SqliteStore implements MemoryStore {
       );
       CREATE INDEX IF NOT EXISTS idx_edge_src ON edge(src_id);
       CREATE INDEX IF NOT EXISTS idx_edge_dst ON edge(dst_id);
+
+      -- Entity glossary: inverted index from a salient term to the memories it
+      -- appears in (Phase 2). Drives about-edges and query-entity seeding.
+      -- Keys are stored lowercased for case-insensitive lookup.
+      CREATE TABLE IF NOT EXISTS entity (
+        entity     TEXT NOT NULL,
+        memory_id  TEXT NOT NULL,
+        PRIMARY KEY (entity, memory_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_entity_entity ON entity(entity);
+      CREATE INDEX IF NOT EXISTS idx_entity_memory ON entity(memory_id);
     `);
   }
 
@@ -213,9 +224,10 @@ export class SqliteStore implements MemoryStore {
       for (const { id } of rows) {
         this.db.prepare(`DELETE FROM memory WHERE id = ?`).run(id);
         this.db.prepare(`DELETE FROM memory_fts WHERE id = ?`).run(id);
-        // Cascade: drop any edges touching this memory so the graph has no
-        // dangling endpoints. Edge construction re-derives them on reindex.
+        // Cascade: drop any edges/entities touching this memory so the graph
+        // has no dangling endpoints. Both are re-derived on reindex.
         this.db.prepare(`DELETE FROM edge WHERE src_id = ? OR dst_id = ?`).run(id, id);
+        this.db.prepare(`DELETE FROM entity WHERE memory_id = ?`).run(id);
       }
     });
     tx(ids);
@@ -223,7 +235,7 @@ export class SqliteStore implements MemoryStore {
   }
 
   clear(): void {
-    this.db.exec(`DELETE FROM memory; DELETE FROM memory_fts; DELETE FROM edge;`);
+    this.db.exec(`DELETE FROM memory; DELETE FROM memory_fts; DELETE FROM edge; DELETE FROM entity;`);
   }
 
   ftsSearch(query: string, limit: number): ScoredId[] {
@@ -327,6 +339,41 @@ export class SqliteStore implements MemoryStore {
     return (this.db.prepare(`SELECT COUNT(*) AS n FROM edge`).get() as { n: number }).n;
   }
 
+  // --- Entity glossary (Phase 2) -------------------------------------------
+
+  setEntities(memoryId: string, entities: string[]): void {
+    const tx = this.db.transaction((ents: string[]) => {
+      this.db.prepare(`DELETE FROM entity WHERE memory_id = ?`).run(memoryId);
+      const ins = this.db.prepare(
+        `INSERT OR IGNORE INTO entity (entity, memory_id) VALUES (?, ?)`,
+      );
+      for (const e of ents) {
+        const key = e.trim().toLowerCase();
+        if (key) ins.run(key, memoryId);
+      }
+    });
+    tx([...new Set(entities)]);
+  }
+
+  memoriesForEntity(entity: string): string[] {
+    const rows = this.db
+      .prepare(`SELECT memory_id FROM entity WHERE entity = ?`)
+      .all(entity.trim().toLowerCase()) as Array<{ memory_id: string }>;
+    return rows.map((r) => r.memory_id);
+  }
+
+  entityLinks(): Array<{ entity: string; memoryId: string }> {
+    const rows = this.db.prepare(`SELECT entity, memory_id FROM entity`).all() as Array<{
+      entity: string;
+      memory_id: string;
+    }>;
+    return rows.map((r) => ({ entity: r.entity, memoryId: r.memory_id }));
+  }
+
+  entityCount(): number {
+    return (this.db.prepare(`SELECT COUNT(DISTINCT entity) AS n FROM entity`).get() as { n: number }).n;
+  }
+
   stats(): StoreStats {
     const count = this.count();
     const withEmbedding = (
@@ -344,7 +391,15 @@ export class SqliteStore implements MemoryStore {
       .all() as Array<{ tier: string; n: number }>;
     const tiers: Record<string, number> = {};
     for (const t of tierRows) tiers[t.tier] = t.n;
-    return { count, withEmbedding, tiers, sources, edges: this.edgeCount(), dbPath: this.dbPath };
+    return {
+      count,
+      withEmbedding,
+      tiers,
+      sources,
+      edges: this.edgeCount(),
+      entities: this.entityCount(),
+      dbPath: this.dbPath,
+    };
   }
 
   close(): void {
