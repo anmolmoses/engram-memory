@@ -70,6 +70,7 @@ LLM OPTIONS (use your subscription — no API key)
 index OPTIONS
   --chunk <mode>       auto (default) | file | paragraph | heading
   --fresh              Wipe the index before indexing (clean rebuild)
+  --incremental        Only embed new/changed content (skip unchanged chunks)
   --no-graph           Skip building the associative graph (edges)
   --llm-edges          After indexing, derive caused/supersedes/lesson_from
                        edges with the configured LLM (needs --llm)
@@ -149,6 +150,7 @@ async function main(): Promise<void> {
         const res = await engram.indexDirectory(dir, {
           chunk: (flags.chunk as never) || "auto",
           fresh: Boolean(flags.fresh),
+          incremental: Boolean(flags.incremental),
           edges: flags["no-graph"] ? false : undefined,
         });
         process.stdout.write(

@@ -50,6 +50,12 @@ export interface IndexOptions extends IngestOptions {
   /** Wipe the whole index before indexing — a clean full rebuild (default false). */
   fresh?: boolean;
   /**
+   * Only embed content not already stored (ids are content-hashed). Skips
+   * re-embedding unchanged chunks — cheap reindex for append-style updates and
+   * paid embedders. Stale/edited chunks reconcile on the next full reindex.
+   */
+  incremental?: boolean;
+  /**
    * Rebuild the associative graph after indexing. `true`/omitted uses the
    * default builders (similar + temporal_next); `false` skips graph building;
    * an object tunes the builders. Edges are derived over the WHOLE store, so
@@ -135,9 +141,34 @@ export class Engram {
   async indexDirectory(dir: string, opts: IndexOptions = {}): Promise<IndexResult> {
     const start = Date.now();
     if (opts.fresh) this.store.clear();
-    const inputs = ingestDirectory(dir, opts);
+    let inputs = ingestDirectory(dir, opts);
     const sources = new Set(inputs.map((i) => i.source).filter((s): s is string => !!s));
     let pruned = 0;
+
+    // Incremental: skip content already in the store (ids are content-hashed,
+    // so unchanged chunks have a stable id). Only NEW/changed chunks get
+    // embedded — critical when embedding costs money/latency (e.g. OpenAI), and
+    // what makes append-style auto-capture cheap. Stale/edited chunks are
+    // reconciled on the next full reindex. Mutually exclusive with fresh/prune.
+    if (opts.incremental && !opts.fresh) {
+      const before = inputs.length;
+      inputs = inputs.filter((i) => {
+        const id = i.id ?? sha256(i.content).slice(0, 16);
+        const existing = this.store.getById(id);
+        return !existing; // keep only chunks not already stored
+      });
+      pruned = 0;
+      const added = await this.addManyResult(inputs);
+      if (opts.edges !== false && added > 0) {
+        this.buildEdges(typeof opts.edges === "object" ? opts.edges : undefined);
+      }
+      return {
+        directory: dir, files: sources.size, memories: added,
+        pruned: before - added, durationMs: Date.now() - start,
+        embeddingModel: this.embedding.name,
+      };
+    }
+
     if (opts.prune !== false && !opts.fresh) {
       for (const src of sources) pruned += this.store.deleteBySourcePrefix(src);
     }
@@ -153,6 +184,14 @@ export class Engram {
       durationMs: Date.now() - start,
       embeddingModel: this.embedding.name,
     };
+  }
+
+  /** addMany that returns how many were stored (for incremental reporting). */
+  private async addManyResult(inputs: MemoryInput[]): Promise<number> {
+    if (inputs.length === 0) return 0;
+    const recs = await this.toRecords(inputs);
+    this.store.upsertMany(recs);
+    return recs.length;
   }
 
   /**
