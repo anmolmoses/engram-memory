@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { meaningfulTokens } from "../util/text.js";
-import type { MemoryRecord, MemoryStore, ScoredId, StoreStats } from "./types.js";
+import type { EdgeType, MemoryEdge, MemoryRecord, MemoryStore, ScoredId, StoreStats } from "./types.js";
 
 /**
  * SQLite-backed store. One file = the whole memory index.
@@ -52,6 +52,26 @@ interface MemoryRow {
   embedding: Buffer | null;
   embedding_model: string | null;
   embedding_dim: number | null;
+}
+
+interface EdgeRow {
+  src_id: string;
+  dst_id: string;
+  type: string;
+  weight: number;
+  created_at: number;
+  updated_at: number;
+}
+
+function rowToEdge(r: EdgeRow): MemoryEdge {
+  return {
+    srcId: r.src_id,
+    dstId: r.dst_id,
+    type: r.type,
+    weight: r.weight,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
 }
 
 function rowToRecord(r: MemoryRow): MemoryRecord {
@@ -111,6 +131,20 @@ export class SqliteStore implements MemoryStore {
         content,
         tokenize = 'porter unicode61'
       );
+
+      -- Associative graph: directed, weighted edges between memories (Phase 2).
+      -- (src_id, dst_id, type) is unique so re-deriving edges upserts weights.
+      CREATE TABLE IF NOT EXISTS edge (
+        src_id     TEXT NOT NULL,
+        dst_id     TEXT NOT NULL,
+        type       TEXT NOT NULL,
+        weight     REAL NOT NULL DEFAULT 1.0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (src_id, dst_id, type)
+      );
+      CREATE INDEX IF NOT EXISTS idx_edge_src ON edge(src_id);
+      CREATE INDEX IF NOT EXISTS idx_edge_dst ON edge(dst_id);
     `);
   }
 
@@ -179,6 +213,9 @@ export class SqliteStore implements MemoryStore {
       for (const { id } of rows) {
         this.db.prepare(`DELETE FROM memory WHERE id = ?`).run(id);
         this.db.prepare(`DELETE FROM memory_fts WHERE id = ?`).run(id);
+        // Cascade: drop any edges touching this memory so the graph has no
+        // dangling endpoints. Edge construction re-derives them on reindex.
+        this.db.prepare(`DELETE FROM edge WHERE src_id = ? OR dst_id = ?`).run(id, id);
       }
     });
     tx(ids);
@@ -186,7 +223,7 @@ export class SqliteStore implements MemoryStore {
   }
 
   clear(): void {
-    this.db.exec(`DELETE FROM memory; DELETE FROM memory_fts;`);
+    this.db.exec(`DELETE FROM memory; DELETE FROM memory_fts; DELETE FROM edge;`);
   }
 
   ftsSearch(query: string, limit: number): ScoredId[] {
@@ -209,6 +246,11 @@ export class SqliteStore implements MemoryStore {
     return rows.map((r) => ({ id: r.id, embedding: decodeVec(r.embedding), dim: r.embedding_dim }));
   }
 
+  allRecords(): MemoryRecord[] {
+    const rows = this.db.prepare(`SELECT * FROM memory`).all() as MemoryRow[];
+    return rows.map(rowToRecord);
+  }
+
   count(): number {
     return (this.db.prepare(`SELECT COUNT(*) AS n FROM memory`).get() as { n: number }).n;
   }
@@ -223,6 +265,66 @@ export class SqliteStore implements MemoryStore {
       for (const id of rows) stmt.run(now, id);
     });
     tx(ids);
+  }
+
+  // --- Associative graph (Phase 2) -----------------------------------------
+
+  addEdge(edge: MemoryEdge): void {
+    this.db
+      .prepare(
+        `INSERT INTO edge (src_id, dst_id, type, weight, created_at, updated_at)
+         VALUES (@src_id, @dst_id, @type, @weight, @created_at, @updated_at)
+         ON CONFLICT(src_id, dst_id, type) DO UPDATE SET
+           weight=excluded.weight, updated_at=excluded.updated_at`,
+      )
+      .run({
+        src_id: edge.srcId,
+        dst_id: edge.dstId,
+        type: edge.type,
+        weight: edge.weight,
+        created_at: edge.createdAt,
+        updated_at: edge.updatedAt,
+      });
+  }
+
+  addEdges(edges: MemoryEdge[]): void {
+    const tx = this.db.transaction((rows: MemoryEdge[]) => {
+      for (const e of rows) this.addEdge(e);
+    });
+    tx(edges);
+  }
+
+  edgesFrom(ids: string[], types?: EdgeType[]): MemoryEdge[] {
+    if (ids.length === 0) return [];
+    const idPh = ids.map(() => "?").join(",");
+    let sql = `SELECT * FROM edge WHERE src_id IN (${idPh})`;
+    const params: unknown[] = [...ids];
+    if (types && types.length > 0) {
+      sql += ` AND type IN (${types.map(() => "?").join(",")})`;
+      params.push(...types);
+    }
+    const rows = this.db.prepare(sql).all(...params) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  edgesFor(id: string): MemoryEdge[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM edge WHERE src_id = ? OR dst_id = ?`)
+      .all(id, id) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  deleteEdgesFor(ids: string[]): number {
+    if (ids.length === 0) return 0;
+    const ph = ids.map(() => "?").join(",");
+    const info = this.db
+      .prepare(`DELETE FROM edge WHERE src_id IN (${ph}) OR dst_id IN (${ph})`)
+      .run(...ids, ...ids);
+    return info.changes;
+  }
+
+  edgeCount(): number {
+    return (this.db.prepare(`SELECT COUNT(*) AS n FROM edge`).get() as { n: number }).n;
   }
 
   stats(): StoreStats {
@@ -242,7 +344,7 @@ export class SqliteStore implements MemoryStore {
       .all() as Array<{ tier: string; n: number }>;
     const tiers: Record<string, number> = {};
     for (const t of tierRows) tiers[t.tier] = t.n;
-    return { count, withEmbedding, tiers, sources, dbPath: this.dbPath };
+    return { count, withEmbedding, tiers, sources, edges: this.edgeCount(), dbPath: this.dbPath };
   }
 
   close(): void {

@@ -8,6 +8,7 @@ export const DEFAULT_WEIGHTS: RecallWeights = {
   lexical: 1,
   importance: 0.5,
   recency: 0,
+  activation: 1,
   rrfK: 60,
   recencyHalfLifeDays: 30,
 };

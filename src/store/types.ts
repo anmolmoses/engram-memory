@@ -9,6 +9,39 @@
 
 export type Tier = "episodic" | "semantic" | "procedural" | "working" | (string & {});
 
+/**
+ * The typed, weighted relationships that turn independent memories into an
+ * associative graph (Phase 2). Some are directed (`caused`, `temporal_next`,
+ * `supersedes`, `lesson_from`), some symmetric (`similar`, `about`); symmetric
+ * relations are stored as a pair of directed edges so traversal stays uniform.
+ *
+ *  - `similar`        — high embedding cosine (auto, offline kNN at index time)
+ *  - `temporal_next`  — the next memory in time within one source/session
+ *  - `about`          — shares a salient entity (via the glossary)
+ *  - `caused`         — A led to / explains B
+ *  - `supersedes`     — A replaces/corrects an older B
+ *  - `lesson_from`    — a general lesson distilled from a concrete episode
+ */
+export type EdgeType =
+  | "similar"
+  | "temporal_next"
+  | "about"
+  | "caused"
+  | "supersedes"
+  | "lesson_from"
+  | (string & {});
+
+/** A directed, weighted edge between two memories. */
+export interface MemoryEdge {
+  srcId: string;
+  dstId: string;
+  type: EdgeType;
+  /** Relationship strength in (0,1]. Drives how much activation flows across it. */
+  weight: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** A fully-materialised memory as it lives in storage. */
 export interface MemoryRecord {
   id: string;
@@ -40,6 +73,8 @@ export interface StoreStats {
   withEmbedding: number;
   tiers: Record<string, number>;
   sources: number;
+  /** Total directed edges in the associative graph (Phase 2). */
+  edges: number;
   dbPath: string;
 }
 
@@ -60,9 +95,27 @@ export interface MemoryStore {
   ftsSearch(query: string, limit: number): ScoredId[];
   /** Every stored embedding. Phase-1 vector search scans these in JS. */
   allVectors(): Array<{ id: string; embedding: Float32Array; dim: number }>;
+  /** Every memory record (full scan). Used by graph construction / consolidation. */
+  allRecords(): MemoryRecord[];
   count(): number;
   /** Bump recency/frequency counters for the given ids. */
   markUsed(ids: string[]): void;
   stats(): StoreStats;
   close(): void;
+
+  // --- Associative graph (Phase 2) -----------------------------------------
+  /** Insert or update one edge (upsert on the (src,dst,type) key). */
+  addEdge(edge: MemoryEdge): void;
+  /** Insert/update many edges in a single transaction. */
+  addEdges(edges: MemoryEdge[]): void;
+  /**
+   * Out-edges leaving any of `ids` — the frontier for spreading activation.
+   * `types` optionally restricts to specific relationship kinds.
+   */
+  edgesFrom(ids: string[], types?: EdgeType[]): MemoryEdge[];
+  /** Every edge incident to `id` in either direction (for inspection/audit). */
+  edgesFor(id: string): MemoryEdge[];
+  /** Remove every edge touching any of `ids` (either endpoint). Returns rows deleted. */
+  deleteEdgesFor(ids: string[]): number;
+  edgeCount(): number;
 }

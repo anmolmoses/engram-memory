@@ -2,7 +2,9 @@ import { SqliteStore } from "./store/sqlite-store.js";
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddings/provider.js";
 import { createLLMProvider, type LLMProvider } from "./llm/provider.js";
 import { ingestDirectory, type IngestOptions } from "./ingest/markdown.js";
+import { buildEdges, type EdgeBuildOptions, type EdgeBuildResult } from "./graph/build.js";
 import { recall as hybridRecall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
+import { spreadActivation } from "./retrieval/spreading.js";
 import { llmRerank } from "./retrieval/rerank.js";
 import { sha256 } from "./util/hash.js";
 import type { MemoryRecord, MemoryStore, StoreStats } from "./store/types.js";
@@ -27,6 +29,13 @@ export interface IndexOptions extends IngestOptions {
   prune?: boolean;
   /** Wipe the whole index before indexing — a clean full rebuild (default false). */
   fresh?: boolean;
+  /**
+   * Rebuild the associative graph after indexing. `true`/omitted uses the
+   * default builders (similar + temporal_next); `false` skips graph building;
+   * an object tunes the builders. Edges are derived over the WHOLE store, so
+   * this runs once per full index, not per file.
+   */
+  edges?: boolean | EdgeBuildOptions;
 }
 
 /**
@@ -112,6 +121,9 @@ export class Engram {
       for (const src of sources) pruned += this.store.deleteBySourcePrefix(src);
     }
     await this.addMany(inputs);
+    if (opts.edges !== false) {
+      this.buildEdges(typeof opts.edges === "object" ? opts.edges : undefined);
+    }
     return {
       directory: dir,
       files: sources.size,
@@ -123,6 +135,16 @@ export class Engram {
   }
 
   /**
+   * (Re)derive the associative graph over every stored memory — `similar`
+   * (embedding kNN) and `temporal_next` (per-source chronology) edges. Cheap,
+   * deterministic, offline. Called automatically by `indexDirectory`; expose
+   * it for callers who `add()` memories directly and want to refresh the graph.
+   */
+  buildEdges(opts?: EdgeBuildOptions): EdgeBuildResult {
+    return buildEdges(this.store, opts ?? {});
+  }
+
+  /**
    * Recall the top-k most relevant memories for a query (hybrid search).
    * With `{ rerank: true }` and an LLM configured, hybrid produces a larger
    * candidate pool that the LLM (your subscription) then reorders by reading the
@@ -131,6 +153,18 @@ export class Engram {
   async recall(query: string, opts: RecallOptions = {}): Promise<RecallResult[]> {
     const k = opts.k ?? this.defaultK;
     const doRerank = Boolean(opts.rerank) && this.llm !== null;
+
+    if (opts.associative) {
+      const ranked = await this.associativeRecall(query, k, opts);
+      // Rerank composes on top of associative recall when an LLM is configured.
+      if (doRerank) {
+        const out = await llmRerank(this.llm!, query, ranked, k);
+        if (opts.markUsed) this.store.markUsed(out.map((r) => r.id));
+        return out;
+      }
+      if (opts.markUsed) this.store.markUsed(ranked.slice(0, k).map((r) => r.id));
+      return ranked.slice(0, k);
+    }
 
     if (!doRerank) {
       return hybridRecall(this.store, this.embedding, query, { k, ...opts }, this.weights);
@@ -147,6 +181,72 @@ export class Engram {
     const ranked = await llmRerank(this.llm!, query, candidates, k);
     if (opts.markUsed) this.store.markUsed(ranked.map((r) => r.id));
     return ranked;
+  }
+
+  /**
+   * Associative recall: hybrid hits seed activation that spreads across the
+   * graph, then the two signals are fused. Hybrid hits keep their relevance and
+   * gain a lift for inflowing activation; memories reached *only* by spreading
+   * enter the results on activation alone — surfacing related context the flat
+   * index would miss. Falls back to plain hybrid order when the graph is empty.
+   */
+  private async associativeRecall(
+    query: string,
+    k: number,
+    opts: RecallOptions,
+  ): Promise<RecallResult[]> {
+    const w: RecallWeights = { ...this.weights, ...(opts.weights ?? {}) };
+    // Seed from a broad hybrid pool so activation starts from solid relevance.
+    const pool = opts.candidatePool ?? 50;
+    const seedsResults = await hybridRecall(
+      this.store,
+      this.embedding,
+      query,
+      { ...opts, k: pool, markUsed: false },
+      this.weights,
+    );
+
+    const byId = new Map<string, RecallResult>();
+    for (const r of seedsResults) byId.set(r.id, r);
+
+    const seeds = new Map<string, number>(seedsResults.map((r) => [r.id, r.score]));
+    const activated = spreadActivation(this.store, seeds, opts.spread);
+
+    // Collect records for activation-only nodes (not already in the hybrid pool).
+    const newIds = [...activated.keys()].filter((id) => !byId.has(id));
+    const fresh = this.store.getByIds(newIds);
+    const freshById = new Map(fresh.map((r) => [r.id, r]));
+
+    for (const [id, act] of activated) {
+      const lift = w.activation * act.activation;
+      const trace = `activation ${act.activation.toFixed(3)} via ${act.via.type}←${act.via.from}`;
+      const existing = byId.get(id);
+      if (existing) {
+        existing.score += lift;
+        existing.scores.activation = act.activation;
+        existing.why += ` · +${trace}`;
+        continue;
+      }
+      const rec = freshById.get(id);
+      if (!rec) continue; // dangling edge endpoint — skip
+      byId.set(id, {
+        id: rec.id,
+        content: rec.content,
+        source: rec.source,
+        tier: rec.tier,
+        importance: rec.importance,
+        score: lift,
+        scores: { rrf: 0, activation: act.activation },
+        ranks: {},
+        metadata: rec.metadata,
+        why: `associative: ${trace}`,
+      });
+    }
+
+    let results = [...byId.values()];
+    if (opts.tier) results = results.filter((r) => r.tier === opts.tier);
+    results.sort((a, b) => b.score - a.score);
+    return results;
   }
 
   /**

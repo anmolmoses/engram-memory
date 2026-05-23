@@ -17,7 +17,15 @@ export type {
   RecallWeights,
   IndexResult,
 } from "./types.js";
-export type { MemoryRecord, MemoryStore, StoreStats, Tier, ScoredId } from "./store/types.js";
+export type {
+  MemoryRecord,
+  MemoryStore,
+  StoreStats,
+  Tier,
+  ScoredId,
+  MemoryEdge,
+  EdgeType,
+} from "./store/types.js";
 
 // Storage
 export { SqliteStore, toFtsQuery } from "./store/sqlite-store.js";
@@ -41,9 +49,23 @@ export {
   type ChunkStrategy,
 } from "./ingest/markdown.js";
 
+// Graph (Phase 2 — associative edges)
+export {
+  buildEdges,
+  type EdgeBuildOptions,
+  type SimilarEdgeOptions,
+  type EdgeBuildResult,
+} from "./graph/build.js";
+
 // Retrieval
 export { recall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
 export { llmRerank, parseOrder } from "./retrieval/rerank.js";
+export {
+  spreadActivation,
+  type SpreadOptions,
+  type Activation,
+  type ActivationProvenance,
+} from "./retrieval/spreading.js";
 
 // LLM (subscription CLIs — claude/codex — or any custom command)
 export {

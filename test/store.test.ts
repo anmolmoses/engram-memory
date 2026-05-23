@@ -67,6 +67,44 @@ test("deleteBySourcePrefix removes a file's memories (and its FTS rows)", () => 
   s.close();
 });
 
+test("edges: upsert, directional query, cascade delete with memories", () => {
+  const s = new SqliteStore(":memory:");
+  const now = Date.now();
+  s.upsert(rec({ id: "a", content: "deploy broke prod", source: "daily/x.md" }));
+  s.upsert(rec({ id: "b", content: "rollback the migration", source: "daily/x.md" }));
+  s.upsert(rec({ id: "c", content: "lesson: migrate before deploy", source: "lessons/m.md" }));
+
+  s.addEdges([
+    { srcId: "a", dstId: "b", type: "caused", weight: 0.9, createdAt: now, updatedAt: now },
+    { srcId: "a", dstId: "c", type: "lesson_from", weight: 0.7, createdAt: now, updatedAt: now },
+    { srcId: "b", dstId: "a", type: "temporal_next", weight: 1, createdAt: now, updatedAt: now },
+  ]);
+  assert.equal(s.edgeCount(), 3);
+
+  // Out-edges from "a" only (directional)
+  const fromA = s.edgesFrom(["a"]);
+  assert.equal(fromA.length, 2);
+  assert.deepEqual(new Set(fromA.map((e) => e.dstId)), new Set(["b", "c"]));
+
+  // Type filter
+  const lessons = s.edgesFrom(["a"], ["lesson_from"]);
+  assert.equal(lessons.length, 1);
+  assert.equal(lessons[0]?.dstId, "c");
+
+  // Incident edges (either direction) for "a"
+  assert.equal(s.edgesFor("a").length, 3); // a→b, a→c, b→a
+
+  // Upsert on the (src,dst,type) key updates weight, not row count
+  s.addEdge({ srcId: "a", dstId: "b", type: "caused", weight: 0.5, createdAt: now, updatedAt: now + 1 });
+  assert.equal(s.edgeCount(), 3);
+  assert.equal(s.edgesFrom(["a"], ["caused"])[0]?.weight, 0.5);
+
+  // Deleting a memory cascades its edges
+  s.deleteBySourcePrefix("daily/x.md"); // removes a and b
+  assert.equal(s.edgeCount(), 0); // every edge touched a or b
+  s.close();
+});
+
 test("toFtsQuery sanitises free text, drops stopwords, rejects empty", () => {
   assert.equal(toFtsQuery("  !! ?? "), null);
   assert.equal(toFtsQuery("how do the with"), null); // all stopwords

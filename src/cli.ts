@@ -67,10 +67,15 @@ LLM OPTIONS (use your subscription — no API key)
 index OPTIONS
   --chunk <mode>       auto (default) | file | paragraph | heading
   --fresh              Wipe the index before indexing (clean rebuild)
+  --no-graph           Skip building the associative graph (edges)
 
 recall OPTIONS
   -k <n>               Number of results (default: 8)
   --tier <tier>        Restrict to a tier (episodic|semantic|procedural|...)
+  --associative        Spread activation across the graph — surface related
+                       memories that share no words/vectors with the query
+  --hops <n>           Spreading hops in associative mode (default: 2)
+  --decay <f>          Per-hop attenuation 0..1 in associative mode (default: 0.5)
   --rerank             Rerank candidates with the configured LLM (better recall)
   --mark-used          Bump recency/use counters on returned memories
   --json               Output raw JSON
@@ -136,10 +141,12 @@ async function main(): Promise<void> {
         const res = await engram.indexDirectory(dir, {
           chunk: (flags.chunk as never) || "auto",
           fresh: Boolean(flags.fresh),
+          edges: flags["no-graph"] ? false : undefined,
         });
         process.stdout.write(
           `Indexed ${res.memories} memories from ${res.files} files ` +
-            `in ${res.directory} (${res.durationMs}ms, pruned ${res.pruned}, model ${res.embeddingModel}).\n`,
+            `in ${res.directory} (${res.durationMs}ms, pruned ${res.pruned}, model ${res.embeddingModel}).\n` +
+            (flags["no-graph"] ? "" : `Associative graph: ${engram.stats().edges} edges.\n`),
         );
         break;
       }
@@ -151,11 +158,20 @@ async function main(): Promise<void> {
         if (rerank && !engram.llm) {
           process.stderr.write("Note: --rerank requested but no LLM configured; using hybrid order.\n");
         }
+        const associative = Boolean(flags.associative);
+        const spread = associative
+          ? {
+              hops: flags.hops ? Number(flags.hops) : undefined,
+              decay: flags.decay ? Number(flags.decay) : undefined,
+            }
+          : undefined;
         const results = await engram.recall(query, {
           k: flags.k ? Number(flags.k) : undefined,
           tier: (flags.tier as string) || undefined,
           markUsed: Boolean(flags["mark-used"]),
           rerank,
+          associative,
+          spread,
         });
         if (flags.json) {
           process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);

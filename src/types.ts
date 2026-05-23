@@ -1,5 +1,6 @@
 import type { EmbeddingConfig } from "./embeddings/provider.js";
 import type { LLMConfig } from "./llm/provider.js";
+import type { SpreadOptions } from "./retrieval/spreading.js";
 
 /** A memory to be stored. Only `content` is required. */
 export interface MemoryInput {
@@ -23,6 +24,12 @@ export interface RecallWeights {
   importance: number;
   /** Strength of the recency boost. 0 disables it (default). */
   recency: number;
+  /**
+   * Weight on graph-spread activation — the fifth signal (Phase 2). Only
+   * applies when recall runs in `associative` mode; scales how much a memory's
+   * received activation lifts (or creates) its score.
+   */
+  activation: number;
   /** Reciprocal-Rank-Fusion constant. Larger = flatter rank influence. */
   rrfK: number;
   /** Half-life in days for the recency boost. */
@@ -56,6 +63,14 @@ export interface RecallOptions {
   rerank?: boolean;
   /** How many hybrid candidates to hand the reranker (default max(k*4, 20)). */
   rerankPool?: number;
+  /**
+   * Run associative recall: seed activation at the hybrid hits and spread it
+   * across the graph, surfacing related memories that share no words/vectors
+   * with the query. No-op (falls back to hybrid) if the graph has no edges.
+   */
+  associative?: boolean;
+  /** Tune the spreading-activation diffusion (decay, hops, edge types). */
+  spread?: SpreadOptions;
 }
 
 export interface RecallResult {
@@ -66,7 +81,7 @@ export interface RecallResult {
   importance: number;
   /** Final fused score (higher = better). */
   score: number;
-  scores: { semantic?: number; lexical?: number; rrf: number };
+  scores: { semantic?: number; lexical?: number; rrf: number; activation?: number };
   ranks: { semantic?: number; lexical?: number };
   metadata: Record<string, unknown> | null;
   /** Human-readable explanation of why this memory surfaced (the "audit" trace). */
