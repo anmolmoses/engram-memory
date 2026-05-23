@@ -8,9 +8,11 @@
   zero-friction, offline operation.
 - **Vector search is a linear scan.** Fine to tens of thousands of memories;
   beyond that, plug in `sqlite-vec`/ANN behind the store interface.
-- **No graph, no associations.** Memories are independent records. There are no
-  causal/temporal/entity edges and no spreading-activation recall yet — the
-  signature feature of the larger design.
+- ~~**No graph, no associations.**~~ **Shipped in Phase 2.** Memories now form a
+  typed, weighted graph (`similar`, `temporal_next`, `about`) with
+  spreading-activation recall and an entity glossary for precise seeding. The
+  remaining edge types (`caused`, `supersedes`, `lesson_from`) need an LLM or
+  explicit authoring and are not yet auto-derived.
 - **No consolidation or forgetting.** Memory grows monotonically; nothing decays,
   gets promoted, or is pruned. There is no short-term/long-term distinction at
   runtime.
@@ -28,14 +30,24 @@ None of these are hidden — they are the explicit boundary of Phase 1, which is
 
 The phases map onto the human-inspired design the project set out to build.
 
-### Phase 2 — Associative graph
-Add typed, weighted edges between memories: `caused`, `temporal_next`, `about`
-(shared entity), `similar`, `supersedes`, `lesson_from`. Replace/augment top-k
-similarity with **spreading activation / Personalized PageRank**: inject activation
-at the query's seed memories and let it cascade along edges, so "dentist" lights up
-the related lesson even with no direct similarity. Entity extraction populates an
-inverted index ("glossary") for precise seeding. This is where recall becomes
-genuinely *associative*.
+### Phase 2 — Associative graph ✅ *(shipped 2026-05)*
+Typed, weighted edges between memories with **spreading-activation /
+Personalized-PageRank** recall: activation is injected at the query's seed
+memories and cascades along edges, so a memory with no direct similarity to the
+query still surfaces when it sits one hop from something that did. This is where
+recall becomes genuinely *associative*.
+
+Delivered:
+- **`similar`** edges from embedding kNN, **`temporal_next`** from per-source
+  chronology, **`about`** from shared glossary entities (IDF-weighted).
+- **Spreading activation** fused as the fifth recall signal
+  (`recall({ associative: true })`), with a "why" trace naming the activation
+  path. Bounded diffusion (decay × hops), provenance-tracked.
+- **Entity glossary**: offline entity extraction (identifiers, acronyms, proper
+  nouns) → inverted index, driving `about` edges and query-entity seeding.
+
+Still open: the LLM/authoring-derived edge types (`caused`, `supersedes`,
+`lesson_from`).
 
 ### Phase 3 — "Dreaming" (consolidation + forgetting)
 Treat the day's memories as a **bounded short-term cache** with salience-weighted
