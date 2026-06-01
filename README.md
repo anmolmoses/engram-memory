@@ -79,10 +79,24 @@ Mem0/Zep). See [`docs/paper/`](docs/paper) for the full write-up.
 
 ## Install
 
+engram ships from GitHub (not the npm registry). Add it straight to your project
+from the git URL — the `prepare` step compiles `dist/` on install, so the import
+just works:
+
 ```bash
-git clone <this-repo> engram && cd engram
-npm install
-npm run build      # compiles to dist/
+npm install github:<owner>/engram-memory
+# or pin a tag/commit:  npm install github:<owner>/engram-memory#v0.1.0
+```
+
+```ts
+import { Engram } from "engram-memory";
+```
+
+Or clone it to hack on / run the CLI locally:
+
+```bash
+git clone https://github.com/<owner>/engram-memory.git && cd engram-memory
+npm install        # runs the build via the prepare script
 npm test           # 62 tests, runs offline
 ```
 
@@ -91,7 +105,7 @@ Requires Node ≥ 20. The only runtime dependency is `better-sqlite3`.
 ## Library usage
 
 ```ts
-import { Engram } from "engram";
+import { Engram } from "engram-memory";
 
 const mem = new Engram({ dbPath: "agent-memory.db" });
 

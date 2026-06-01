@@ -2,7 +2,7 @@
  * engram — a plug-and-play associative memory layer for any AI agent.
  *
  * Public API surface. Import what you need:
- *   import { Engram } from "engram";
+ *   import { Engram } from "engram-memory";
  */
 
 export { Engram } from "./engram.js";

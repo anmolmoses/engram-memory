@@ -10,7 +10,7 @@ engram is deliberately tiny to integrate. The pattern is always the same:
 ## Minimal integration (any framework)
 
 ```ts
-import { Engram } from "engram";
+import { Engram } from "engram-memory";
 
 const memory = new Engram({ dbPath: "agent-memory.db" });
 await memory.indexDirectory("./memories"); // run once, or when files change

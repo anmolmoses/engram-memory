@@ -1,7 +1,7 @@
 {
-  "name": "engram",
+  "name": "engram-memory",
   "version": "0.1.0",
-  "description": "A plug-and-play associative memory layer for any AI agent. Phase 1: hybrid (semantic + lexical) recall over markdown, backed by SQLite + FTS5.",
+  "description": "A plug-and-play associative memory layer for any AI agent: hybrid (semantic + lexical) recall, an associative graph with spreading activation, dreaming consolidation, and recall@k eval — backed by SQLite + FTS5.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -41,6 +41,7 @@
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
