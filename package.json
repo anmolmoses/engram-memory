@@ -4,6 +4,12 @@
   "description": "A plug-and-play associative memory layer for any AI agent: hybrid (semantic + lexical) recall, an associative graph with spreading activation, dreaming consolidation, and recall@k eval — backed by SQLite + FTS5.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anmolm-growthx/engram-memory.git"
+  },
+  "homepage": "https://github.com/anmolm-growthx/engram-memory#readme",
+  "bugs": "https://github.com/anmolm-growthx/engram-memory/issues",
   "keywords": [
     "agent",
     "memory",
