@@ -10,3 +10,6 @@ dist/
 .env.local
 coverage/
 *.tsbuildinfo
+
+# Local deployment config (use engram.config.example.json as the template)
+engram.config.json

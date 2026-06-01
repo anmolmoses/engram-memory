@@ -8,10 +8,11 @@ programmatically), and it gives any agent fast, ranked, *explainable* recall ove
 everything it has ever written — with zero external services and zero API keys
 required to get started.
 
-> Phase 1 of a larger design. This release ships **hybrid retrieval** (semantic +
-> lexical) over a **SQLite + FTS5** index that is a rebuildable cache on top of your
-> existing files. The graph, spreading-activation recall, and "dreaming"
-> consolidation layers are [on the roadmap](#roadmap).
+> All four layers of the design ship today: **hybrid retrieval** (semantic +
+> lexical) over a **SQLite + FTS5** index, an **associative graph** with
+> spreading-activation recall, **"dreaming"** consolidation, and **reinforcement +
+> recall@k eval**. The index is a rebuildable cache on top of your existing files —
+> your markdown stays the source of truth. See [what's inside](#whats-inside).
 
 ```bash
 npm install
@@ -48,13 +49,26 @@ Mem0/Zep). See [`docs/paper/`](docs/paper) for the full write-up.
 
 - **Hybrid recall** — semantic (vector cosine) **+** lexical (SQLite FTS5/bm25),
   fused with Reciprocal Rank Fusion. Robust without score normalisation.
+- **Associative recall** — a typed graph of edges between memories (causal,
+  temporal, entity, similarity) plus **spreading activation**: a hit "charges" its
+  neighbours, so recall can surface a relevant memory the keyword/vector pool never
+  contained. Pass `{ associative: true }`.
+- **Dreaming (consolidation)** — treat short-term memory as a bounded cache; a
+  consolidation pass scores salience, cold-archives the noise, and keeps what
+  matters retrievable. Run it on a cron.
+- **Reinforcement + eval** — Hebbian edge strengthening on co-recall, plus a
+  built-in **recall@k** evaluator and weight tuner so you can measure and improve
+  retrieval against a labelled set.
 - **Zero-dependency by default** — an offline, deterministic hashing embedder means
   it runs with no API keys, no network, no native model. Great for tests, demos,
   and air-gapped agents.
 - **Pluggable embeddings** — swap in OpenAI (built-in) or any model via a one-method
   interface for true semantic recall.
+- **Use your subscription, no API key** — optionally rerank, tag, and infer edges
+  with the Claude or ChatGPT CLI you already pay for.
 - **Markdown-native ingestion** — frontmatter parsing, recursive walk, smart
-  auto-chunking (whole-file for notes, paragraph-split for daily logs).
+  auto-chunking (whole-file for notes, paragraph-split for daily logs), and
+  **incremental** indexing that only re-embeds changed content.
 - **Salience-aware** — an `importance` signal gently tilts ranking (a deploy that
   broke prod outranks small talk).
 - **Explainable** — every result carries a `why` trace ("semantic #1 · lexical #2 ·
@@ -69,7 +83,7 @@ Mem0/Zep). See [`docs/paper/`](docs/paper) for the full write-up.
 git clone <this-repo> engram && cd engram
 npm install
 npm run build      # compiles to dist/
-npm test           # 17 tests, runs offline
+npm test           # 62 tests, runs offline
 ```
 
 Requires Node ≥ 20. The only runtime dependency is `better-sqlite3`.
@@ -94,11 +108,21 @@ await mem.add({
 // 3. Recall the most relevant memories for the current situation.
 const hits = await mem.recall("what should I watch out for when deploying?", { k: 5 });
 
+// 3b. ...or recall associatively — let a hit charge its graph neighbours, so
+//     related-but-not-keyword-matching memories surface too.
+const linked = await mem.recall("deploying", { k: 5, associative: true });
+
 // 4. Drop them straight into your prompt.
 const context = mem.toContextBlock(hits);
 
 mem.close();
 ```
+
+The same instance also exposes the rest of the design: `mem.buildEdges()` and
+`mem.buildLlmEdges()` (associative graph), `mem.consolidate()` (dreaming),
+`mem.graphExport()` (for visualisation), `mem.recallTrace()` (the activation path
+behind a result), and `mem.surprise()` / `mem.reinforce()` (novelty + Hebbian
+strengthening).
 
 See [`examples/agent-integration.md`](examples/agent-integration.md) for the
 per-turn agent loop and how to expose memory as model tools.
@@ -168,9 +192,13 @@ For any other local model, use `{ provider: "command", command: "ollama", args: 
 ## CLI
 
 ```bash
-engram index <dir>        # index .md/.txt files (--fresh for a clean rebuild)
+engram index <dir>        # index .md/.txt files (--fresh, --incremental, --llm-edges)
 engram recall "<query>"   # -k N, --tier T, --rerank, --json, --mark-used
 engram add "<text>"       # --tier, --importance, --source
+engram graph              # export the associative graph (nodes + edges) as JSON
+engram tag "<text>"       # tier/importance/emotion/topic/people as JSON (needs --llm)
+engram dream              # consolidation pass — cold-archive low-salience memories
+engram eval <file.json>   # score recall@k against a labelled set
 engram stats              # index statistics
 engram help
 ```
@@ -202,7 +230,11 @@ engram/
     embeddings/          # pluggable providers (hashing default, openai optional)
     llm/                 # subscription-CLI providers (claude, codex, command)
     ingest/              # markdown frontmatter + chunking
-    retrieval/           # hybrid RRF fusion + scoring
+    retrieval/           # hybrid RRF fusion, LLM rerank, spreading activation
+    graph/               # associative edges (similarity, entity, LLM-inferred)
+    enrich/              # memory tagging (tier/importance/emotion/topic/people)
+    consolidation/       # "dreaming" — salience scoring + cold-archive
+    eval/                # recall@k evaluation + weight tuning
     util/                # hashing, cosine, frontmatter, tokenisation
   test/                  # node:test suites (offline)
   examples/              # quickstart + integration guide
@@ -210,19 +242,23 @@ engram/
   docs/paper/            # research-paper-style design documentation
 ```
 
-## Roadmap
+## What's inside
 
-`engram` Phase 1 is the recall layer. The larger design adds, in order:
+The full design ships in four layers. Each is independently usable and degrades
+gracefully — no LLM, no network, and no graph are all valid configurations.
 
-- **Phase 2 — associative graph:** typed edges between memories (causal, temporal,
-  entity, similarity) and spreading-activation / Personalized-PageRank recall.
-- **Phase 3 — dreaming:** treat short-term memory as a bounded cache; a nightly
-  consolidation job replays the day, promotes salient memories to long-term,
-  extracts lessons, and garbage-collects the rest (salience-weighted eviction).
-- **Phase 4 — reinforcement & eval:** Hebbian edge strengthening, recall@k
-  benchmarking, weight tuning.
+1. **Recall** — hybrid semantic + lexical retrieval over SQLite/FTS5, fused with
+   Reciprocal Rank Fusion and nudged by importance/recency. The foundation.
+2. **Associative graph** — typed edges between memories (similarity, entity,
+   temporal, and LLM-inferred causal/supersedes/lesson_from) with
+   spreading-activation recall (`{ associative: true }`).
+3. **Dreaming** — consolidation that scores salience, cold-archives the noise, and
+   keeps the signal retrievable. Run it on a schedule (`engram dream`).
+4. **Reinforcement & eval** — Hebbian edge strengthening on co-recall, a recall@k
+   evaluator, and a weight tuner to measure and improve retrieval.
 
-See [`docs/paper/09-limitations-and-roadmap.md`](docs/paper/09-limitations-and-roadmap.md).
+Design write-up, layer by layer, in [`docs/paper/`](docs/paper). Known limits and
+what's next: [`docs/paper/09-limitations-and-roadmap.md`](docs/paper/09-limitations-and-roadmap.md).
 
 ## License
 
