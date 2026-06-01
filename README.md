@@ -53,11 +53,12 @@ Mem0/Zep). See [`docs/paper/`](docs/paper) for the full write-up.
   temporal, entity, similarity) plus **spreading activation**: a hit "charges" its
   neighbours, so recall can surface a relevant memory the keyword/vector pool never
   contained. Pass `{ associative: true }`.
-- **Short-term → long-term** — memory moves both ways. A consolidation pass
-  ("dreaming") scores salience and **cold-archives** the noise; a promotion pass
-  lifts memories that have *proven useful* (recalled repeatedly) out of the
-  transient `episodic` tier into a durable, **protected** one — so the lessons
-  that keep coming up are never forgotten. Run both on a cron.
+- **Short-term → long-term** — memory moves both ways. A promotion pass lifts
+  memories that have *proven useful* (recalled repeatedly) out of the transient
+  `episodic` tier into a durable, **protected** one; a consolidation pass scores
+  salience and **cold-archives** the noise — so the lessons that keep coming up
+  are never forgotten while the chatter fades. One `mem.dream()` call runs the
+  whole cycle on a cron.
 - **Reinforcement + eval** — Hebbian edge strengthening on co-recall, plus a
   built-in **recall@k** evaluator and weight tuner so you can measure and improve
   retrieval against a labelled set.
@@ -99,7 +100,7 @@ Or clone it to hack on / run the CLI locally:
 ```bash
 git clone https://github.com/anmolm-growthx/engram-memory.git && cd engram-memory
 npm install        # runs the build via the prepare script
-npm test           # 68 tests, runs offline
+npm test           # 70 tests, runs offline
 ```
 
 Requires Node ≥ 20. The only runtime dependency is `better-sqlite3`.
@@ -134,12 +135,25 @@ const context = mem.toContextBlock(hits);
 mem.close();
 ```
 
-The same instance also exposes the rest of the design: `mem.buildEdges()` and
-`mem.buildLlmEdges()` (associative graph), `mem.consolidate()` (dreaming —
-archive the noise) and `mem.promote()` (lift proven memories short-term →
-long-term), `mem.graphExport()` (for visualisation), `mem.recallTrace()` (the
-activation path behind a result), and `mem.surprise()` / `mem.reinforce()`
-(novelty + Hebbian strengthening).
+### Maintenance — one call, on a cron
+
+```ts
+// Nightly: promote proven memories to long-term, then forget the noise.
+mem.dream({ consolidate: { capacity: 5000 } });
+```
+
+`dream()` runs the whole short-term/long-term cycle in the right order —
+promotion first (so memories that earned their keep become protected), then
+consolidation (archive the low-salience remainder), sharing one clock. Promotion
+runs by default; consolidation only archives once you give it a `capacity`. Pass
+`{ promote: false }` or `{ consolidate: false }` to run just one half. That's the
+only operational call a plug-and-play deployment needs.
+
+The same instance also exposes each piece directly if you want finer control:
+`mem.buildEdges()` / `mem.buildLlmEdges()` (associative graph), `mem.consolidate()`
+and `mem.promote()` (the two halves of `dream()`), `mem.graphExport()` (for
+visualisation), `mem.recallTrace()` (the activation path behind a result), and
+`mem.surprise()` / `mem.reinforce()` (novelty + Hebbian strengthening).
 
 See [`examples/agent-integration.md`](examples/agent-integration.md) for the
 per-turn agent loop and how to expose memory as model tools.
@@ -270,10 +284,10 @@ gracefully — no LLM, no network, and no graph are all valid configurations.
 2. **Associative graph** — typed edges between memories (similarity, entity,
    temporal, and LLM-inferred causal/supersedes/lesson_from) with
    spreading-activation recall (`{ associative: true }`).
-3. **Dreaming** — short-term/long-term memory management. Consolidation scores
-   salience and cold-archives the noise (`engram dream`); promotion lifts
-   memories proven useful by repeated recall into a durable, protected tier
-   (`engram promote`). Run both on a schedule.
+3. **Dreaming** — short-term/long-term memory management in one call. `dream()`
+   (CLI `engram dream`) promotes memories proven useful by repeated recall into a
+   durable, protected tier, then consolidates — scoring salience and
+   cold-archiving the noise. One cron line is the whole maintenance story.
 4. **Reinforcement & eval** — Hebbian edge strengthening on co-recall, a recall@k
    evaluator, and a weight tuner to measure and improve retrieval.
 

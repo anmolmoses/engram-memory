@@ -66,6 +66,20 @@ export interface IndexOptions extends IngestOptions {
   edges?: boolean | EdgeBuildOptions;
 }
 
+/** Options for the unified `dream()` maintenance cycle. */
+export interface DreamOptions {
+  /** Promotion pass (short-term → long-term). `false` skips it. */
+  promote?: PromoteOptions | false;
+  /** Consolidation pass (forget low-salience). `false` skips it. Needs a `capacity` to archive anything. */
+  consolidate?: ConsolidateOptions | false;
+}
+
+/** What one `dream()` cycle did. Either field is null when its pass was skipped. */
+export interface DreamResult {
+  promotion: PromoteResult | null;
+  consolidation: ConsolidateResult | null;
+}
+
 /**
  * Engram — the public memory engine.
  *
@@ -240,6 +254,27 @@ export class Engram {
    */
   promote(opts?: PromoteOptions): PromoteResult {
     return promote(this.store, opts ?? {});
+  }
+
+  /**
+   * One-call nightly maintenance — the whole short-term/long-term cycle. Runs
+   * promotion first (so memories that earned long-term status become protected),
+   * then consolidation (archive the low-salience remainder). Both passes share a
+   * single clock so their recency maths agree.
+   *
+   * Plug-and-play default: promotion runs; consolidation only archives if you
+   * give it a `capacity` (otherwise it's a safe no-op). Pass `false` for either
+   * sub-pass to skip it. Schedule this on a cron and forget about it.
+   *
+   * @example mem.dream({ consolidate: { capacity: 5000 } }); // promote + cap at 5k
+   */
+  dream(opts: DreamOptions = {}): DreamResult {
+    const now = Date.now();
+    const promotion =
+      opts.promote === false ? null : promote(this.store, { now, ...(opts.promote ?? {}) });
+    const consolidation =
+      opts.consolidate === false ? null : consolidate(this.store, { now, ...(opts.consolidate ?? {}) });
+    return { promotion, consolidation };
   }
 
   /**

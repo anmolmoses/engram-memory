@@ -85,6 +85,43 @@ test("dryRun ranks candidates without changing anything", async () => {
   mem.close();
 });
 
+test("dream() runs the full cycle: promote first, then consolidate, sharing one clock", async () => {
+  const mem = new Engram({ dbPath: ":memory:" });
+  const now = Date.now();
+  await mem.addMany([
+    { id: "proven", content: "the lesson recalled again and again", tier: "episodic", importance: 5, createdAt: now - 40 * DAY },
+    { id: "filler1", content: "filler one", tier: "episodic", importance: 5, createdAt: now - 41 * DAY },
+    { id: "filler2", content: "filler two", tier: "episodic", importance: 5, createdAt: now - 42 * DAY },
+  ]);
+  recallNTimes(mem, ["proven"], 5);
+
+  // One call does both: promote "proven" (protecting it), then cap the hot set.
+  const res = mem.dream({ promote: { minUseCount: 3 }, consolidate: { capacity: 1 } });
+  assert.equal(res.promotion?.promoted, 1);
+  assert.deepEqual(res.promotion?.promotedIds, ["proven"]);
+  // "proven" is now semantic (protected); only the fillers get archived.
+  assert.ok(!res.consolidation?.archivedIds.includes("proven"), "promotion happens before forgetting");
+  assert.equal(mem.store.getById("proven")!.tier, "semantic");
+  mem.close();
+});
+
+test("dream() sub-passes can be skipped with false", async () => {
+  const mem = new Engram({ dbPath: ":memory:" });
+  const now = Date.now();
+  await mem.addMany([{ id: "a", content: "proven", tier: "episodic", importance: 7, createdAt: now }]);
+  recallNTimes(mem, ["a"], 4);
+
+  const onlyConsolidate = mem.dream({ promote: false, consolidate: { capacity: 100 } });
+  assert.equal(onlyConsolidate.promotion, null);
+  assert.ok(onlyConsolidate.consolidation !== null);
+  assert.equal(mem.store.getById("a")!.tier, "episodic", "promotion skipped");
+
+  const onlyPromote = mem.dream({ consolidate: false });
+  assert.equal(onlyPromote.consolidation, null);
+  assert.equal(onlyPromote.promotion?.promoted, 1);
+  mem.close();
+});
+
 test("limit caps promotions to the highest-scoring, and promotion is idempotent", async () => {
   const mem = new Engram({ dbPath: ":memory:" });
   const now = Date.now();

@@ -50,7 +50,7 @@ COMMANDS
   add <text...>        Add a single memory
   graph                Export the associative graph (nodes + edges) as JSON
   tag <text>           Tag a memory (tier/importance/emotion/topic/people) as JSON
-  dream                Run a consolidation pass (cold-archive low-salience memories)
+  dream                Nightly maintenance: promote proven memories, then consolidate
   promote              Promote proven memories short-term -> long-term (durable tier)
   eval <file.json>     Score recall@k against a labelled set ([{query,relevantIds}])
   stats                Show index statistics
@@ -89,6 +89,13 @@ recall OPTIONS
   --rerank             Rerank candidates with the configured LLM (better recall)
   --mark-used          Bump recency/use counters on returned memories
   --reinforce          Hebbian: strengthen edges among the co-retrieved results
+  --json               Output raw JSON
+
+dream OPTIONS
+  --capacity <n>       Max hot memories to keep; lowest-salience archived beyond it
+  --min-uses <n>       Min recall count for promotion eligibility (default: 3)
+  --no-promote         Skip the promotion (short-term -> long-term) pass
+  --no-consolidate     Skip the consolidation (forget) pass
   --json               Output raw JSON
 
 promote OPTIONS
@@ -281,14 +288,22 @@ async function main(): Promise<void> {
       }
 
       case "dream": {
+        // Full nightly cycle: promote proven memories (short-term -> long-term),
+        // then consolidate (archive low-salience). --no-promote / --no-consolidate
+        // run just one half; --capacity caps the hot set during consolidation.
         const capacity = flags.capacity ? Number(flags.capacity) : undefined;
-        const res = engram.consolidate({ capacity });
-        process.stdout.write(
-          flags.json
-            ? `${JSON.stringify(res)}\n`
-            : `Dreamed: scored ${res.scored}, kept ${res.kept}, archived ${res.archived} ` +
-              `(${res.protectedCount} protected).\n`,
-        );
+        const res = engram.dream({
+          promote: flags["no-promote"] ? false : { minUseCount: flags["min-uses"] ? Number(flags["min-uses"]) : undefined },
+          consolidate: flags["no-consolidate"] ? false : { capacity },
+        });
+        if (flags.json) {
+          process.stdout.write(`${JSON.stringify(res)}\n`);
+          break;
+        }
+        const p = res.promotion;
+        const c = res.consolidation;
+        if (p) process.stdout.write(`Promoted ${p.promoted} short-term -> long-term (${p.eligible} eligible of ${p.scanned}).\n`);
+        if (c) process.stdout.write(`Consolidated: scored ${c.scored}, kept ${c.kept}, archived ${c.archived} (${c.protectedCount} protected).\n`);
         break;
       }
 

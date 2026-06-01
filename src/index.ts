@@ -6,7 +6,7 @@
  */
 
 export { Engram } from "./engram.js";
-export type { IndexOptions } from "./engram.js";
+export type { IndexOptions, DreamOptions, DreamResult } from "./engram.js";
 
 // Types
 export type {
