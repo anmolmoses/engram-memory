@@ -53,9 +53,11 @@ Mem0/Zep). See [`docs/paper/`](docs/paper) for the full write-up.
   temporal, entity, similarity) plus **spreading activation**: a hit "charges" its
   neighbours, so recall can surface a relevant memory the keyword/vector pool never
   contained. Pass `{ associative: true }`.
-- **Dreaming (consolidation)** — treat short-term memory as a bounded cache; a
-  consolidation pass scores salience, cold-archives the noise, and keeps what
-  matters retrievable. Run it on a cron.
+- **Short-term → long-term** — memory moves both ways. A consolidation pass
+  ("dreaming") scores salience and **cold-archives** the noise; a promotion pass
+  lifts memories that have *proven useful* (recalled repeatedly) out of the
+  transient `episodic` tier into a durable, **protected** one — so the lessons
+  that keep coming up are never forgotten. Run both on a cron.
 - **Reinforcement + eval** — Hebbian edge strengthening on co-recall, plus a
   built-in **recall@k** evaluator and weight tuner so you can measure and improve
   retrieval against a labelled set.
@@ -97,7 +99,7 @@ Or clone it to hack on / run the CLI locally:
 ```bash
 git clone https://github.com/anmolm-growthx/engram-memory.git && cd engram-memory
 npm install        # runs the build via the prepare script
-npm test           # 62 tests, runs offline
+npm test           # 68 tests, runs offline
 ```
 
 Requires Node ≥ 20. The only runtime dependency is `better-sqlite3`.
@@ -133,10 +135,11 @@ mem.close();
 ```
 
 The same instance also exposes the rest of the design: `mem.buildEdges()` and
-`mem.buildLlmEdges()` (associative graph), `mem.consolidate()` (dreaming),
-`mem.graphExport()` (for visualisation), `mem.recallTrace()` (the activation path
-behind a result), and `mem.surprise()` / `mem.reinforce()` (novelty + Hebbian
-strengthening).
+`mem.buildLlmEdges()` (associative graph), `mem.consolidate()` (dreaming —
+archive the noise) and `mem.promote()` (lift proven memories short-term →
+long-term), `mem.graphExport()` (for visualisation), `mem.recallTrace()` (the
+activation path behind a result), and `mem.surprise()` / `mem.reinforce()`
+(novelty + Hebbian strengthening).
 
 See [`examples/agent-integration.md`](examples/agent-integration.md) for the
 per-turn agent loop and how to expose memory as model tools.
@@ -212,6 +215,7 @@ engram add "<text>"       # --tier, --importance, --source
 engram graph              # export the associative graph (nodes + edges) as JSON
 engram tag "<text>"       # tier/importance/emotion/topic/people as JSON (needs --llm)
 engram dream              # consolidation pass — cold-archive low-salience memories
+engram promote            # lift proven memories short-term -> long-term (--dry-run to preview)
 engram eval <file.json>   # score recall@k against a labelled set
 engram stats              # index statistics
 engram help
@@ -266,8 +270,10 @@ gracefully — no LLM, no network, and no graph are all valid configurations.
 2. **Associative graph** — typed edges between memories (similarity, entity,
    temporal, and LLM-inferred causal/supersedes/lesson_from) with
    spreading-activation recall (`{ associative: true }`).
-3. **Dreaming** — consolidation that scores salience, cold-archives the noise, and
-   keeps the signal retrievable. Run it on a schedule (`engram dream`).
+3. **Dreaming** — short-term/long-term memory management. Consolidation scores
+   salience and cold-archives the noise (`engram dream`); promotion lifts
+   memories proven useful by repeated recall into a durable, protected tier
+   (`engram promote`). Run both on a schedule.
 4. **Reinforcement & eval** — Hebbian edge strengthening on co-recall, a recall@k
    evaluator, and a weight tuner to measure and improve retrieval.
 

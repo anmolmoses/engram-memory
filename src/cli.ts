@@ -51,6 +51,7 @@ COMMANDS
   graph                Export the associative graph (nodes + edges) as JSON
   tag <text>           Tag a memory (tier/importance/emotion/topic/people) as JSON
   dream                Run a consolidation pass (cold-archive low-salience memories)
+  promote              Promote proven memories short-term -> long-term (durable tier)
   eval <file.json>     Score recall@k against a labelled set ([{query,relevantIds}])
   stats                Show index statistics
   help                 Show this help
@@ -90,11 +91,19 @@ recall OPTIONS
   --reinforce          Hebbian: strengthen edges among the co-retrieved results
   --json               Output raw JSON
 
+promote OPTIONS
+  --min-uses <n>       Min recall count to be eligible (default: 3)
+  --limit <n>          Max memories to promote this pass (highest-scoring first)
+  --to-tier <tier>     Durable tier to promote into (default: semantic)
+  --dry-run            Rank candidates without promoting anything
+  --json               Output raw JSON
+
 EXAMPLES
   engram index ./memories
   engram recall "what went wrong with the last deploy?" -k 5
   engram recall "trust an agent that says it's done?" --llm claude --llm-model sonnet --rerank
   engram add "Prod broke when we skipped the migration step" --tier episodic --importance 9
+  engram promote --dry-run        # see which episodic memories have earned long-term status
   engram stats
 `;
 
@@ -280,6 +289,29 @@ async function main(): Promise<void> {
             : `Dreamed: scored ${res.scored}, kept ${res.kept}, archived ${res.archived} ` +
               `(${res.protectedCount} protected).\n`,
         );
+        break;
+      }
+
+      case "promote": {
+        const dry = Boolean(flags["dry-run"]);
+        const res = engram.promote({
+          minUseCount: flags["min-uses"] ? Number(flags["min-uses"]) : undefined,
+          limit: flags.limit ? Number(flags.limit) : undefined,
+          toTier: (flags["to-tier"] as string) || undefined,
+          dryRun: dry,
+        });
+        if (flags.json) {
+          process.stdout.write(`${JSON.stringify(res)}\n`);
+          break;
+        }
+        process.stdout.write(
+          `Promotion: scanned ${res.scanned}, ${res.eligible} eligible, ` +
+            `${dry ? `would promote ${res.eligible}` : `promoted ${res.promoted}`}.\n`,
+        );
+        const shown = dry ? res.candidates : res.candidates.slice(0, res.promoted);
+        for (const c of shown) {
+          process.stdout.write(`  [${c.score.toFixed(2)}] ${c.useCount}× recalled · ${c.label}\n`);
+        }
         break;
       }
 

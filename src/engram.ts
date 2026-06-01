@@ -10,6 +10,7 @@ import {
   consolidate, reinforce, readmit, salience, DEFAULT_SALIENCE,
   type ConsolidateOptions, type ConsolidateResult,
 } from "./consolidation/consolidate.js";
+import { promote, type PromoteOptions, type PromoteResult } from "./consolidation/promote.js";
 import { recall as hybridRecall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
 import { cosine } from "./util/cosine.js";
 import { spreadActivation } from "./retrieval/spreading.js";
@@ -228,6 +229,17 @@ export class Engram {
   /** Re-admit cold-archived memories back into recall. */
   readmit(ids: string[]): void {
     readmit(this.store, ids);
+  }
+
+  /**
+   * Promote proven memories from short-term to long-term: transient (episodic)
+   * memories recalled at least `minUseCount` times are flipped to a durable tier
+   * (default `semantic`), which `consolidate()` then protects from forgetting.
+   * The upward counterpart to `consolidate()`'s downward archiving. Pass
+   * `{ dryRun: true }` to rank candidates without changing anything.
+   */
+  promote(opts?: PromoteOptions): PromoteResult {
+    return promote(this.store, opts ?? {});
   }
 
   /**

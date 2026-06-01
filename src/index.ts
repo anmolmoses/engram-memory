@@ -93,6 +93,15 @@ export {
   type ConsolidateOptions,
   type ConsolidateResult,
 } from "./consolidation/consolidate.js";
+export {
+  promote,
+  promotionScore,
+  DEFAULT_PROMOTION,
+  type PromotionWeights,
+  type PromoteOptions,
+  type PromoteResult,
+  type PromotionCandidate,
+} from "./consolidation/promote.js";
 
 // Retrieval
 export { recall, DEFAULT_WEIGHTS } from "./retrieval/hybrid.js";
