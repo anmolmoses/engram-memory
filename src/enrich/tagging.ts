@@ -13,13 +13,14 @@
  */
 
 import type { LLMProvider } from "../llm/provider.js";
+import { emotionPalettePrompt } from "./emotions.js";
 
 export interface MemoryTags {
   /** Structure: episodic (an event), semantic (a durable fact/rule), procedural (a how-to), working (transient). */
   tier: "episodic" | "semantic" | "procedural" | "working";
   /** Long-term importance 0..1. */
   importance: number;
-  /** One-word emotional tone (neutral, positive, frustrated, excited, anxious, proud, …). */
+  /** Emotional tone — one word from the emotion palette (see `EMOTIONS`), e.g. "frustrated", "pride", "relief". */
   emotion: string;
   /** Emotional intensity 0..1. */
   emotionIntensity: number;
@@ -78,7 +79,7 @@ function buildPrompt(texts: string[]): string {
     `You tag memories for an AI agent's memory system. For each numbered item, classify:\n` +
     `- "tier": episodic (a specific event/conversation), semantic (a durable fact/rule/preference), or procedural (a how-to/process)\n` +
     `- "importance": 0.0-1.0 — worth remembering long-term? (consequence, reusability, surprise)\n` +
-    `- "emotion": one lowercase word for the tone (neutral, positive, negative, frustrated, excited, anxious, proud, amused, …)\n` +
+    `- "emotion": the single lowercase emotion that best fits the tone. Pick the most precise one from this palette (or the closest word if truly none fit):\n${emotionPalettePrompt()}\n` +
     `- "emotionIntensity": 0.0-1.0\n` +
     `- "topic": 1-3 word label\n` +
     `- "people": array of names/handles mentioned (lowercase, no @; [] if none)\n` +

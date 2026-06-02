@@ -53,6 +53,7 @@ COMMANDS
   dream                Nightly maintenance: promote proven memories, then consolidate
   promote              Promote proven memories short-term -> long-term (durable tier)
   eval <file.json>     Score recall@k against a labelled set ([{query,relevantIds}])
+  dashboard            Serve the live neuron-graph visualiser (recall, dream, explore)
   stats                Show index statistics
   help                 Show this help
 
@@ -97,6 +98,10 @@ dream OPTIONS
   --no-promote         Skip the promotion (short-term -> long-term) pass
   --no-consolidate     Skip the consolidation (forget) pass
   --json               Output raw JSON
+
+dashboard OPTIONS
+  --port <n>           Port to serve on (default: 7755)
+  --host <addr>        Host/interface to bind (default: 127.0.0.1)
 
 promote OPTIONS
   --min-uses <n>       Min recall count to be eligible (default: 3)
@@ -363,6 +368,21 @@ async function main(): Promise<void> {
       case "stats": {
         const s = engram.stats();
         process.stdout.write(`${JSON.stringify(s, null, 2)}\n`);
+        break;
+      }
+
+      case "dashboard": {
+        const port = flags.port ? Number(flags.port) : 7755;
+        const host = (flags.host as string) || "127.0.0.1";
+        const { startDashboard } = await import("./dashboard/server.js");
+        startDashboard(engram, { port, host });
+        const s = engram.stats();
+        process.stdout.write(
+          `\n  🧠  engram dashboard → http://${host}:${port}\n` +
+            `      ${s.count} neurons · ${s.edges} synapses · ${s.entities} entities\n` +
+            `      recall a memory and watch the neurons fire · Ctrl+C to stop\n\n`,
+        );
+        await new Promise<never>(() => {}); // serve until interrupted (skips the finally close)
         break;
       }
 

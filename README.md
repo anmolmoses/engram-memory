@@ -61,6 +61,8 @@ It surfaced the right memory even though the query never said "migration" or
 | 🔀 **Hybrid recall** | Semantic (vector cosine) **+** lexical (SQLite FTS5/bm25), fused with Reciprocal Rank Fusion — robust without score normalisation. |
 | 🕸️ **Associative recall** | A typed graph of edges (causal, temporal, entity, similarity) **+ spreading activation**: a hit *charges* its neighbours, so recall surfaces a relevant memory the keyword/vector pool never contained. Pass `{ associative: true }`. |
 | 🌙 **Short-term → long-term** | Promotion lifts memories *proven useful* (recalled repeatedly) into a durable, **protected** tier; consolidation cold-archives the noise. One `mem.dream()` runs the whole cycle on a cron. |
+| 🪟 **Live dashboard, built in** | `engram dashboard` serves a zero-setup neuron-graph visualiser — type a query and **watch the neurons fire**, tinted by emotion, with dream / reindex / explore controls. No external services. |
+| 🎨 **Affect-aware tagging** | Memories are tagged from a **comprehensive human-emotion palette** (130+ feelings across joy, love, awe, grief, fear, anger, shame, nostalgia…), so recall and the dashboard can reason and colour by how a memory *felt*. |
 | 💪 **Reinforcement + eval** | Hebbian edge strengthening on co-recall, plus a built-in **recall@k** evaluator and weight tuner to measure and improve retrieval. |
 | 🔌 **Zero-dependency by default** | An offline, deterministic hashing embedder — no API keys, no network, no native model. Great for tests, demos, and air-gapped agents. |
 | 🧩 **Pluggable everything** | Swap embeddings (OpenAI built-in, or any model via a one-method interface). Use the **Claude/ChatGPT CLI subscription you already pay for** to rerank, tag, and infer edges — no API key. |
@@ -89,7 +91,7 @@ Or clone it to hack on / run the CLI locally:
 ```bash
 git clone https://github.com/anmolmoses/engram-memory.git && cd engram-memory
 npm install        # runs the build via the prepare script
-npm test           # 70 tests, runs offline
+npm test           # 77 tests, runs offline
 ```
 
 Requires **Node ≥ 20**. The only runtime dependency is `better-sqlite3`.
@@ -206,6 +208,7 @@ engram tag "<text>"       # tier/importance/emotion/topic/people as JSON (needs 
 engram dream              # nightly maintenance: promote proven memories, then consolidate
 engram promote            # lift proven memories short-term -> long-term (--dry-run to preview)
 engram eval <file.json>   # score recall@k against a labelled set
+engram dashboard          # serve the live neuron-graph visualiser (--port, --host)
 engram stats              # index statistics
 engram help
 ```
@@ -213,6 +216,34 @@ engram help
 Common flags: `--db <path>` (or `$ENGRAM_DB`), `--config <path>`,
 `--provider hashing|openai`, `--model`, `--dim`, `--openai-key`.
 LLM flags: `--llm claude|codex|none`, `--llm-model <name>`, `--tmux`, `--rerank`.
+
+---
+
+## 🪟 Dashboard
+
+engram ships its own visualiser — **no extra setup, no external services**. Point
+it at your index and open the URL:
+
+```bash
+engram dashboard --db agent-memory.db    # → http://127.0.0.1:7755
+```
+
+<div align="center">
+<img src="assets/dashboard.png" alt="engram dashboard — the memory graph as firing neurons" width="100%" />
+</div>
+
+Each memory is a **neuron**, each edge a **synapse**, tinted by the emotion the
+memory carries. Type a query and the neurons that recall fires light up — seeds
+glow brightest, then activation spreads along the graph. Scroll to zoom, drag to
+pan, click a neuron to inspect it; the `dream` / `reindex` buttons run maintenance
+live. It's also embeddable in your own app:
+
+```ts
+import { Engram, startDashboard } from "engram-memory";
+
+const mem = new Engram({ dbPath: "agent-memory.db" });
+startDashboard(mem, { port: 7755 });   // serves the same UI + JSON API
+```
 
 ---
 
@@ -266,9 +297,10 @@ engram/
     ingest/              # markdown frontmatter + chunking
     retrieval/           # hybrid RRF fusion, LLM rerank, spreading activation
     graph/               # associative edges (similarity, entity, LLM-inferred)
-    enrich/              # memory tagging (tier/importance/emotion/topic/people)
+    enrich/              # memory tagging + the human-emotion palette
     consolidation/       # "dreaming" — salience scoring, promotion, cold-archive
     eval/                # recall@k evaluation + weight tuning
+    dashboard/           # self-contained neuron-graph visualiser (page + server)
     util/                # hashing, cosine, frontmatter, tokenisation
   test/                  # node:test suites (offline)
   examples/              # quickstart + integration guide

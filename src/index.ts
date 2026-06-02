@@ -67,6 +67,16 @@ export {
 export { extractEntities } from "./graph/entities.js";
 export { tagMemories, parseTags, type MemoryTags } from "./enrich/tagging.js";
 export {
+  EMOTIONS,
+  EMOTION_FAMILIES,
+  emotionInfo,
+  emotionValence,
+  isKnownEmotion,
+  emotionPalettePrompt,
+  type EmotionFamily,
+  type Valence,
+} from "./enrich/emotions.js";
+export {
   buildLlmEdges,
   parseRelations,
   type LlmEdgeOptions,
@@ -126,6 +136,10 @@ export { CommandProvider, type CommandOptions } from "./llm/command.js";
 
 // Config
 export { loadConfig, type EngramFileConfig } from "./config.js";
+
+// Dashboard — the live neuron-graph visualiser (out of the box)
+export { startDashboard, type DashboardOptions } from "./dashboard/server.js";
+export { DASHBOARD_HTML } from "./dashboard/page.js";
 
 // Utils that callers may reuse
 export { cosine, l2normalize } from "./util/cosine.js";
