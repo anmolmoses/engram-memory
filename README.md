@@ -12,11 +12,11 @@ offline by default · zero API keys to start · the whole index in one SQLite fi
 </p>
 
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-70%20passing-22c55e?style=for-the-badge)](#)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=node.js&logoColor=white)](#)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](#)
-[![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](#)
-[![No API keys](https://img.shields.io/badge/API%20keys-optional-8b5cf6?style=for-the-badge)](#)
+![Tests](https://img.shields.io/badge/tests-70%20passing-22c55e?style=for-the-badge)
+![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=node.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
+![No API keys](https://img.shields.io/badge/API%20keys-optional-8b5cf6?style=for-the-badge)
 
 </div>
 
