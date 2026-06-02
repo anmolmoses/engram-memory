@@ -6,10 +6,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anmolm-growthx/engram-memory.git"
+    "url": "git+https://github.com/anmolmoses/engram-memory.git"
   },
-  "homepage": "https://github.com/anmolm-growthx/engram-memory#readme",
-  "bugs": "https://github.com/anmolm-growthx/engram-memory/issues",
+  "homepage": "https://github.com/anmolmoses/engram-memory#readme",
+  "bugs": "https://github.com/anmolmoses/engram-memory/issues",
   "keywords": [
     "agent",
     "memory",

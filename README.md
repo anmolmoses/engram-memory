@@ -87,8 +87,8 @@ from the git URL — the `prepare` step compiles `dist/` on install, so the impo
 just works:
 
 ```bash
-npm install github:anmolm-growthx/engram-memory
-# or pin a tag/commit:  npm install github:anmolm-growthx/engram-memory#v0.1.0
+npm install github:anmolmoses/engram-memory
+# or pin a tag/commit:  npm install github:anmolmoses/engram-memory#v0.1.0
 ```
 
 ```ts
@@ -98,7 +98,7 @@ import { Engram } from "engram-memory";
 Or clone it to hack on / run the CLI locally:
 
 ```bash
-git clone https://github.com/anmolm-growthx/engram-memory.git && cd engram-memory
+git clone https://github.com/anmolmoses/engram-memory.git && cd engram-memory
 npm install        # runs the build via the prepare script
 npm test           # 70 tests, runs offline
 ```
