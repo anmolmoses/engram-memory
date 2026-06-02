@@ -12,7 +12,7 @@ offline by default · zero API keys to start · the whole index in one SQLite fi
 </p>
 
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-70%20passing-22c55e?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-77%20passing-22c55e?style=for-the-badge)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
@@ -165,6 +165,93 @@ const mem = new Engram({
 
 Or implement the `EmbeddingProvider` interface (`{ name, dim, embed(texts) }`) for a
 local model, Cohere, Voyage, etc. Nothing else in your code changes.
+
+---
+
+## 🤖 Drop into the agents you already run
+
+engram is an *additive* recall layer — it doesn't replace your agent, it gives it a
+memory that **compounds**. The wiring is always the same four calls (recall before a
+turn → inject → `add()` after → `dream()` on a cron), so the same integration works
+whether your agent is TypeScript (import the library), another language (shell out to
+the CLI for `--json`), or MCP-native (expose `recall` / `remember` as tools). Two
+popular open-source agents below; the pattern generalises to any of them.
+
+### Why this makes an agent *self-improving*
+
+A logging agent writes everything and recalls nothing — every session starts cold.
+engram closes the loop into a flywheel:
+
+1. **Recall before acting** — the agent enters each turn with its own past wins,
+   scars, and decisions in context, ranked and explainable.
+2. **Write outcomes back** — `add()` captures what happened, tagged by emotion and
+   importance.
+3. **Reinforce** — memories recalled together get Hebbian-linked (`reinforce()`); the
+   graph learns which lessons travel together.
+4. **Dream** — nightly `dream()` *promotes* memories that proved useful (recalled
+   repeatedly) into a protected long-term tier and *consolidates* the noise away.
+
+The net effect: the agent's recall gets **sharper the longer you run it**, with no
+retraining and no growing prompt — the SQLite index does the remembering.
+
+### 🦞 OpenClaw — [`openclaw/openclaw`](https://github.com/openclaw/openclaw)
+
+<a href="https://github.com/openclaw/openclaw"><img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text.svg" alt="OpenClaw" height="64" /></a>
+
+> *"Your own personal AI assistant. Any OS. Any Platform. The lobster way. 🦞"* — a
+> local-first, self-hosted assistant that answers across WhatsApp, Telegram, Slack,
+> Discord, Signal, iMessage and 50+ channels. Each agent is configured by its
+> `SOUL.md` / workspace files. MIT-licensed.
+
+OpenClaw remembers a *persona* but not a *history* — across channels and days it
+re-reads its `SOUL.md` and starts fresh. engram gives it the history.
+
+```bash
+# 1. Index the agent's workspace / notes once (and on change).
+engram index ./agents/<name>/workspace --incremental
+
+# 2. In the gateway hook that assembles context for an incoming message,
+#    recall against the message and splice the block in alongside SOUL.md:
+engram recall "$INCOMING_MESSAGE" --json -k 5 --mark-used
+
+# 3. After the agent replies, persist the salient outcome:
+engram add "$OUTCOME" --tier episodic --importance 6
+
+# 4. Cron (nightly): promote proven memories, archive the noise.
+engram dream
+```
+
+Now a lesson learned in the Telegram channel surfaces when the same problem shows up
+in Slack — **cross-channel memory**, because the index is shared, not the thread.
+
+### 🪽 Hermes Agent — [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent)
+
+<a href="https://github.com/NousResearch/hermes-agent"><img src="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/assets/banner.png" alt="Hermes Agent" width="100%" /></a>
+
+> *"The self-improving AI agent built by Nous Research."* — an autonomous agent with a
+> built-in learning loop: after a complex task it writes a reusable skill, and it
+> ships **40+ tools** plus **Model Context Protocol** support out of the box.
+> MIT-licensed.
+
+Hermes already self-improves on the *skill* axis (it writes new skills) and does
+FTS5 session search. engram upgrades the *recall* axis it's weakest at: pure keyword
+session-search can't surface a memory that never shared a word with the query.
+engram's **associative graph + spreading activation** can — a hit charges its
+neighbours, so the relevant-but-differently-worded lesson lights up. Because Hermes
+speaks MCP, the cleanest integration is to expose engram as two tools and let the
+model drive its own memory:
+
+```ts
+// recall_memory(query, k)  ->  engram.recall(query, { k, associative: true })
+// remember(text, importance, tier)  ->  engram.add({ content, importance, tier })
+```
+
+Pair that with `dream()` on Hermes' existing periodic-nudge cron and the two loops
+reinforce each other: skills capture *how* to do a thing, engram remembers *when it
+mattered and how it felt* — and promotes the lessons that keep earning recall.
+
+See [`examples/agent-integration.md`](examples/agent-integration.md) for the full
+per-turn loop (library, CLI, and tool-exposure variants).
 
 ---
 

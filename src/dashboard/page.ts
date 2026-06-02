@@ -113,7 +113,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
   var nodes = [], edges = [], byId = {}, palette = {};
   var view = { x: 0, y: 0, k: 1 };
-  var alpha = 0;
+  var alpha = 0, tick = 0, framed = false, userMoved = false;
   var hover = null, selected = null;
 
   function toast(msg) {
@@ -140,11 +140,12 @@ export const DASHBOARD_HTML = `<!doctype html>
   function buildGraph(data) {
     palette = data.palette || {};
     byId = {};
+    var spread = 50 * Math.sqrt(Math.max(1, data.nodes.length));
     nodes = data.nodes.map(function (n) {
       var o = {};
       for (var key in n) o[key] = n[key];
-      o.x = (Math.random() - 0.5) * 600;
-      o.y = (Math.random() - 0.5) * 600;
+      o.x = (Math.random() - 0.5) * spread;
+      o.y = (Math.random() - 0.5) * spread;
       o.vx = 0; o.vy = 0; o.deg = 0; o.fire = 0;
       byId[o.id] = o; return o;
     });
@@ -156,57 +157,95 @@ export const DASHBOARD_HTML = `<!doctype html>
       s.deg++; t.deg++;
       edges.push({ s: s, t: t, type: e.type, weight: e.weight || 0.5 });
     }
-    // center the view on first load
-    view = { x: W / 2, y: H / 2, k: 0.85 };
-    alpha = 1;
+    view = { x: W / 2, y: H / 2, k: 0.35 };
+    alpha = 1; tick = 0; framed = false; userMoved = false;
   }
 
-  // ---- force simulation: grid repulsion + edge springs + gravity ----
+  // Frame most of the graph in view, ignoring far outliers (uses mean ± k·std
+  // so a few long spikes don't force the whole thing to zoom way out).
+  function fitView() {
+    var n = nodes.length; if (!n) return;
+    var mx = 0, my = 0, i;
+    for (i = 0; i < n; i++) { mx += nodes[i].x; my += nodes[i].y; }
+    mx /= n; my /= n;
+    var sx = 0, sy = 0;
+    for (i = 0; i < n; i++) { var dx = nodes[i].x - mx, dy = nodes[i].y - my; sx += dx * dx; sy += dy * dy; }
+    sx = Math.sqrt(sx / n); sy = Math.sqrt(sy / n);
+    var halfW = Math.max(sx * 2.6, 60), halfH = Math.max(sy * 2.6, 60);
+    var k = Math.min(W / (halfW * 2 * 1.12), H / (halfH * 2 * 1.12));
+    k = Math.max(0.04, Math.min(2.2, k));
+    view.k = k; view.x = W / 2 - mx * k; view.y = H / 2 - my * k;
+  }
+
+  function clampVel(nd, max) {
+    var m = Math.sqrt(nd.vx * nd.vx + nd.vy * nd.vy);
+    if (m > max) { nd.vx = nd.vx / m * max; nd.vy = nd.vy / m * max; }
+  }
+
+  // ---- force simulation, tuned for large graphs ----
+  //  - LOCAL pairwise repulsion (anti-overlap, short range, via a grid)
+  //  - GLOBAL repulsion from per-cell centroids (Barnes-Hut-lite): spreads the
+  //    core so it doesn't collapse into a hairball
+  //  - degree-normalised springs: hubs pull each leaf gently, killing the long
+  //    radial spikes a naive spring produces on high-degree nodes
   function step() {
-    if (alpha < 0.005) { alpha = 0; return; }
-    var n = nodes.length;
-    var REP = 1400, SPRING = 0.012, GRAV = 0.018, DAMP = 0.86;
-    // spatial grid for repulsion
-    var cell = 60, grid = {};
-    for (var i = 0; i < n; i++) {
+    if (alpha < 0.004) { if (!framed && !userMoved) { fitView(); framed = true; } return; }
+    tick++;
+    var n = nodes.length, i;
+    var cell = 140;
+    var grid = {}, sumx = {}, sumy = {}, cnt = {};
+    for (i = 0; i < n; i++) {
       var a = nodes[i];
-      var gx = Math.floor(a.x / cell), gy = Math.floor(a.y / cell);
-      var key = gx + "," + gy;
+      var gx = Math.round(a.x / cell), gy = Math.round(a.y / cell), key = gx + "," + gy;
       (grid[key] || (grid[key] = [])).push(a);
+      sumx[key] = (sumx[key] || 0) + a.x; sumy[key] = (sumy[key] || 0) + a.y; cnt[key] = (cnt[key] || 0) + 1;
     }
-    for (var i2 = 0; i2 < n; i2++) {
-      var p = nodes[i2];
-      var pgx = Math.floor(p.x / cell), pgy = Math.floor(p.y / cell);
+    var keys = Object.keys(grid), cents = [];
+    for (i = 0; i < keys.length; i++) { var ck = keys[i]; cents.push({ x: sumx[ck] / cnt[ck], y: sumy[ck] / cnt[ck], m: cnt[ck] }); }
+
+    var LOCAL = 1100, GLOBAL = 34000, NEAR = cell * 1.5, NEAR2 = NEAR * NEAR;
+    for (i = 0; i < n; i++) {
+      var p = nodes[i];
+      var pgx = Math.round(p.x / cell), pgy = Math.round(p.y / cell);
       for (var ox = -1; ox <= 1; ox++) for (var oy = -1; oy <= 1; oy++) {
-        var bucket = grid[(pgx + ox) + "," + (pgy + oy)];
-        if (!bucket) continue;
-        for (var b = 0; b < bucket.length; b++) {
-          var qn = bucket[b]; if (qn === p) continue;
-          var dx = p.x - qn.x, dy = p.y - qn.y;
-          var d2 = dx * dx + dy * dy + 0.01;
-          if (d2 > 9000) continue;
-          var f = REP / d2 * alpha;
-          var d = Math.sqrt(d2);
-          p.vx += (dx / d) * f; p.vy += (dy / d) * f;
+        var b = grid[(pgx + ox) + "," + (pgy + oy)]; if (!b) continue;
+        for (var j = 0; j < b.length; j++) {
+          var qn = b[j]; if (qn === p) continue;
+          var dx = p.x - qn.x, dy = p.y - qn.y, d2 = dx * dx + dy * dy + 0.01;
+          var f = LOCAL / d2 * alpha, d = Math.sqrt(d2);
+          p.vx += dx / d * f; p.vy += dy / d * f;
         }
       }
+      for (var c = 0; c < cents.length; c++) {
+        var ce = cents[c];
+        var ex = p.x - ce.x, ey = p.y - ce.y, e2 = ex * ex + ey * ey + 1;
+        if (e2 < NEAR2) continue;
+        var ef = GLOBAL * ce.m / e2 * alpha, ed2 = Math.sqrt(e2);
+        p.vx += ex / ed2 * ef; p.vy += ey / ed2 * ef;
+      }
     }
+
+    var SPRING = 0.02, TARGET = 64;
     for (var e = 0; e < edges.length; e++) {
-      var ed = edges[e], s = ed.s, t = ed.t;
-      var dx2 = t.x - s.x, dy2 = t.y - s.y;
-      var dist = Math.sqrt(dx2 * dx2 + dy2 * dy2) + 0.01;
-      var target = 48;
-      var f2 = (dist - target) * SPRING * (0.4 + ed.weight) * alpha;
-      var fx = (dx2 / dist) * f2, fy = (dy2 / dist) * f2;
+      var edg = edges[e], s = edg.s, t = edg.t;
+      var dx2 = t.x - s.x, dy2 = t.y - s.y, dist = Math.sqrt(dx2 * dx2 + dy2 * dy2) + 0.01;
+      var norm = 1 / Math.sqrt(Math.min(s.deg, t.deg) || 1);
+      var f2 = (dist - TARGET) * SPRING * (0.4 + edg.weight) * norm * alpha;
+      var fx = dx2 / dist * f2, fy = dy2 / dist * f2;
       s.vx += fx; s.vy += fy; t.vx -= fx; t.vy -= fy;
     }
-    for (var g = 0; g < n; g++) {
-      var nd = nodes[g];
-      nd.vx -= nd.x * GRAV * alpha; nd.vy -= nd.y * GRAV * alpha;
+
+    var CENTER = 0.01, DAMP = 0.9;
+    for (i = 0; i < n; i++) {
+      var nd = nodes[i];
+      nd.vx -= nd.x * CENTER * alpha; nd.vy -= nd.y * CENTER * alpha;
       nd.vx *= DAMP; nd.vy *= DAMP;
+      clampVel(nd, 22);
       nd.x += nd.vx; nd.y += nd.vy;
     }
-    alpha *= 0.985;
+    alpha *= 0.991;
+    // keep the graph framed while it settles, until the user takes control
+    if (!userMoved && tick % 30 === 0) fitView();
   }
 
   function tx(x) { return x * view.k + view.x; }
@@ -216,15 +255,22 @@ export const DASHBOARD_HTML = `<!doctype html>
     ctx.clearRect(0, 0, W, H);
     // edges
     ctx.lineWidth = 0.6;
+    // Edges are faint by default (12k+ of them would otherwise be a hairball);
+    // an edge lights up only when one of its endpoints is firing. Denser graphs
+    // get fainter base edges so the structure stays readable.
+    var edgeBase = Math.max(0.025, Math.min(0.1, 90 / (edges.length + 1)));
+    ctx.lineWidth = 0.5;
     for (var e = 0; e < edges.length; e++) {
       var ed = edges[e], s = ed.s, t = ed.t;
       var lit = s.fire > 0.02 || t.fire > 0.02;
-      var col = EDGE_COLORS[ed.type] || "#3a4256";
-      ctx.strokeStyle = col;
-      ctx.globalAlpha = lit ? 0.55 : 0.10 + ed.weight * 0.10;
+      var sx2 = tx(s.x), sy2 = ty(s.y), tx2 = tx(t.x), ty2 = ty(t.y);
+      // cull edges fully off-screen
+      if (!lit && ((sx2 < 0 && tx2 < 0) || (sx2 > W && tx2 > W) || (sy2 < 0 && ty2 < 0) || (sy2 > H && ty2 > H))) continue;
+      ctx.strokeStyle = EDGE_COLORS[ed.type] || "#33415e";
+      ctx.globalAlpha = lit ? 0.5 : edgeBase + ed.weight * edgeBase;
       ctx.beginPath();
-      ctx.moveTo(tx(s.x), ty(s.y));
-      ctx.lineTo(tx(t.x), ty(t.y));
+      ctx.moveTo(sx2, sy2);
+      ctx.lineTo(tx2, ty2);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -262,7 +308,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   window.addEventListener("mousemove", function (ev) {
     if (dragging) {
       var dx = ev.clientX - lastX, dy = ev.clientY - lastY;
-      if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+      if (Math.abs(dx) + Math.abs(dy) > 2) { moved = true; userMoved = true; }
       view.x += dx; view.y += dy; lastX = ev.clientX; lastY = ev.clientY;
     } else {
       hover = pick(ev.clientX, ev.clientY);
@@ -271,6 +317,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   });
   canvas.addEventListener("wheel", function (ev) {
     ev.preventDefault();
+    userMoved = true;
     var rect = canvas.getBoundingClientRect();
     var mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
     var f = Math.exp(-ev.deltaY * 0.0012);
@@ -363,7 +410,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   document.getElementById("q").addEventListener("keydown", function (e) { if (e.key === "Enter") doRecall(); });
   document.getElementById("reset").addEventListener("click", function () {
     document.getElementById("q").value = ""; clearFire(); hidePanel();
-    view = { x: W / 2, y: H / 2, k: 0.85 }; alpha = Math.max(alpha, 0.3);
+    userMoved = false; fitView();
   });
   document.getElementById("dream").addEventListener("click", function () { maintain("dream"); });
   document.getElementById("reindex").addEventListener("click", function () { maintain("reindex"); });
