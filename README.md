@@ -1,18 +1,38 @@
-# engram
+<div align="center">
 
-**A plug-and-play associative memory layer for any AI agent.**
+<img src="assets/banner.png" alt="engram — associative memory for AI agents" width="100%" />
 
-Agents are great at logging what happened and terrible at recalling it. `engram`
-fixes the recall half. Point it at a folder of markdown notes (or `add()` memories
+<h1>engram</h1>
+
+<b>Plug-and-play associative memory for any AI agent.</b>
+
+<p>
+<i>Hybrid recall · associative graph · spreading activation · dreaming · recall@k eval<br/>
+offline by default · zero API keys to start · the whole index in one SQLite file</i>
+</p>
+
+[![License](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-70%20passing-22c55e?style=for-the-badge)](#)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=node.js&logoColor=white)](#)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](#)
+[![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](#)
+[![No API keys](https://img.shields.io/badge/API%20keys-optional-8b5cf6?style=for-the-badge)](#)
+
+</div>
+
+---
+
+Agents are great at logging what happened and terrible at recalling it. **`engram`
+fixes the recall half.** Point it at a folder of markdown notes (or `add()` memories
 programmatically), and it gives any agent fast, ranked, *explainable* recall over
 everything it has ever written — with zero external services and zero API keys
 required to get started.
 
 > All four layers of the design ship today: **hybrid retrieval** (semantic +
 > lexical) over a **SQLite + FTS5** index, an **associative graph** with
-> spreading-activation recall, **"dreaming"** consolidation, and **reinforcement +
-> recall@k eval**. The index is a rebuildable cache on top of your existing files —
-> your markdown stays the source of truth. See [what's inside](#whats-inside).
+> spreading-activation recall, **"dreaming"** consolidation (short-term ⇄
+> long-term), and **reinforcement + recall@k eval**. The index is a rebuildable
+> cache on top of your existing files — your markdown stays the source of truth.
 
 ```bash
 npm install
@@ -21,7 +41,7 @@ node dist/cli.js index ./sample-memories --fresh
 node dist/cli.js recall "why did production go down after a release?"
 ```
 
-```
+```text
 Top 3 memories for: "why did production go down after a release?"
 
 1. [score 0.0400] Production broke once when a deploy shipped application code that
@@ -29,62 +49,31 @@ Top 3 memories for: "why did production go down after a release?"
    ↳ semantic #1 (0.21) · lexical #1 · importance 0.90 · semantic/deploy-rollback-rule.md
 ```
 
-Note it surfaced the right memory even though the query never said "migration" or
-"rollback." That is the whole point.
+It surfaced the right memory even though the query never said "migration" or
+"rollback." **That is the whole point.**
 
 ---
 
-## Why
+## ✨ Features
 
-A daily-log memory (one append-only file per day) is **write-optimised and
-recall-hostile**: finding "that thing from a few weeks ago" means re-reading every
-file. `engram` makes recall a ranked query instead of a scan, and keeps your
-markdown as the source of truth — the index is derived and can be rebuilt anytime.
+| | |
+|---|---|
+| 🔀 **Hybrid recall** | Semantic (vector cosine) **+** lexical (SQLite FTS5/bm25), fused with Reciprocal Rank Fusion — robust without score normalisation. |
+| 🕸️ **Associative recall** | A typed graph of edges (causal, temporal, entity, similarity) **+ spreading activation**: a hit *charges* its neighbours, so recall surfaces a relevant memory the keyword/vector pool never contained. Pass `{ associative: true }`. |
+| 🌙 **Short-term → long-term** | Promotion lifts memories *proven useful* (recalled repeatedly) into a durable, **protected** tier; consolidation cold-archives the noise. One `mem.dream()` runs the whole cycle on a cron. |
+| 💪 **Reinforcement + eval** | Hebbian edge strengthening on co-recall, plus a built-in **recall@k** evaluator and weight tuner to measure and improve retrieval. |
+| 🔌 **Zero-dependency by default** | An offline, deterministic hashing embedder — no API keys, no network, no native model. Great for tests, demos, and air-gapped agents. |
+| 🧩 **Pluggable everything** | Swap embeddings (OpenAI built-in, or any model via a one-method interface). Use the **Claude/ChatGPT CLI subscription you already pay for** to rerank, tag, and infer edges — no API key. |
+| 📄 **Markdown-native** | Frontmatter parsing, recursive walk, smart auto-chunking, and **incremental** indexing that only re-embeds changed content. |
+| 🔎 **Explainable** | Every result carries a `why` trace (`semantic #1 · lexical #2 · importance 0.90`). Recall you can audit. |
+| 💾 **One file = the whole index** | A single SQLite file you can copy, back up, or delete and rebuild. Tiny surface: one `Engram` class, a small CLI, no framework. |
 
-The design is grounded in the agent-memory literature (Generative Agents'
-recency/importance/relevance scoring; hybrid vector+lexical retrieval as used by
-Mem0/Zep). See [`docs/paper/`](docs/paper) for the full write-up.
+---
 
-## Features
+## 📦 Install
 
-- **Hybrid recall** — semantic (vector cosine) **+** lexical (SQLite FTS5/bm25),
-  fused with Reciprocal Rank Fusion. Robust without score normalisation.
-- **Associative recall** — a typed graph of edges between memories (causal,
-  temporal, entity, similarity) plus **spreading activation**: a hit "charges" its
-  neighbours, so recall can surface a relevant memory the keyword/vector pool never
-  contained. Pass `{ associative: true }`.
-- **Short-term → long-term** — memory moves both ways. A promotion pass lifts
-  memories that have *proven useful* (recalled repeatedly) out of the transient
-  `episodic` tier into a durable, **protected** one; a consolidation pass scores
-  salience and **cold-archives** the noise — so the lessons that keep coming up
-  are never forgotten while the chatter fades. One `mem.dream()` call runs the
-  whole cycle on a cron.
-- **Reinforcement + eval** — Hebbian edge strengthening on co-recall, plus a
-  built-in **recall@k** evaluator and weight tuner so you can measure and improve
-  retrieval against a labelled set.
-- **Zero-dependency by default** — an offline, deterministic hashing embedder means
-  it runs with no API keys, no network, no native model. Great for tests, demos,
-  and air-gapped agents.
-- **Pluggable embeddings** — swap in OpenAI (built-in) or any model via a one-method
-  interface for true semantic recall.
-- **Use your subscription, no API key** — optionally rerank, tag, and infer edges
-  with the Claude or ChatGPT CLI you already pay for.
-- **Markdown-native ingestion** — frontmatter parsing, recursive walk, smart
-  auto-chunking (whole-file for notes, paragraph-split for daily logs), and
-  **incremental** indexing that only re-embeds changed content.
-- **Salience-aware** — an `importance` signal gently tilts ranking (a deploy that
-  broke prod outranks small talk).
-- **Explainable** — every result carries a `why` trace ("semantic #1 · lexical #2 ·
-  importance 0.90"). Recall you can audit.
-- **One file = the whole index** — a single SQLite file you can copy, back up, or
-  delete and rebuild.
-- **TypeScript, tiny surface** — one `Engram` class, a small CLI, no framework.
-
-## Install
-
-engram ships from GitHub (not the npm registry). Add it straight to your project
-from the git URL — the `prepare` step compiles `dist/` on install, so the import
-just works:
+engram ships from GitHub. Add it straight to your project from the git URL — the
+`prepare` step compiles `dist/` on install, so the import just works:
 
 ```bash
 npm install github:anmolmoses/engram-memory
@@ -103,9 +92,11 @@ npm install        # runs the build via the prepare script
 npm test           # 70 tests, runs offline
 ```
 
-Requires Node ≥ 20. The only runtime dependency is `better-sqlite3`.
+Requires **Node ≥ 20**. The only runtime dependency is `better-sqlite3`.
 
-## Library usage
+---
+
+## 🚀 Library usage
 
 ```ts
 import { Engram } from "engram-memory";
@@ -135,7 +126,7 @@ const context = mem.toContextBlock(hits);
 mem.close();
 ```
 
-### Maintenance — one call, on a cron
+### 🌙 Maintenance — one call, on a cron
 
 ```ts
 // Nightly: promote proven memories to long-term, then forget the noise.
@@ -146,8 +137,8 @@ mem.dream({ consolidate: { capacity: 5000 } });
 promotion first (so memories that earned their keep become protected), then
 consolidation (archive the low-salience remainder), sharing one clock. Promotion
 runs by default; consolidation only archives once you give it a `capacity`. Pass
-`{ promote: false }` or `{ consolidate: false }` to run just one half. That's the
-only operational call a plug-and-play deployment needs.
+`{ promote: false }` or `{ consolidate: false }` to run just one half. **That's the
+only operational call a plug-and-play deployment needs.**
 
 The same instance also exposes each piece directly if you want finer control:
 `mem.buildEdges()` / `mem.buildLlmEdges()` (associative graph), `mem.consolidate()`
@@ -173,17 +164,19 @@ const mem = new Engram({
 Or implement the `EmbeddingProvider` interface (`{ name, dim, embed(texts) }`) for a
 local model, Cohere, Voyage, etc. Nothing else in your code changes.
 
-## Use your existing subscription (no API key)
+---
+
+## 🔑 Use your existing subscription (no API key)
 
 engram can use the **Claude or ChatGPT subscription you already pay for** — via
 their command-line tools — to *rerank* recalled memories (and optionally rate
-importance). It shells out to `claude -p` or `codex exec`; no API key, no separate
-billing.
+importance, tag, and infer edges). It shells out to `claude -p` or `codex exec`;
+no API key, no separate billing.
 
 ```ts
 const mem = new Engram({
   dbPath: "agent-memory.db",
-  llm: { provider: "claude-cli", model: "sonnet" },   // your Claude subscription
+  llm: { provider: "claude-cli", model: "sonnet" },      // your Claude subscription
   // llm: { provider: "codex-cli", model: "gpt-5-codex" }, // your ChatGPT/Codex subscription
 });
 
@@ -194,41 +187,23 @@ How rerank works: hybrid search produces a larger candidate pool (cheap, local),
 then the LLM **reads the actual text and reorders by true relevance**. On any
 failure it falls back to the hybrid order — reranking never makes recall worse.
 
-```bash
-# from the shell, using your Claude subscription:
-engram recall "trust an agent that says it's done?" --llm claude --llm-model sonnet --rerank
-
-# silent tmux invocation (for environments that prefer a tmux/TTY context):
-engram recall "..." --llm claude --rerank --tmux
-```
-
-**Configure once** in `engram.config.json` (see `engram.config.example.json`):
-
-```json
-{ "dbPath": "agent-memory.db",
-  "llm": { "provider": "claude-cli", "model": "sonnet", "useTmux": false },
-  "rerank": true }
-```
-
-Providers & models are configurable:
-
 | Provider | Subscription | Models (`--llm-model`) | Prereq |
 |----------|--------------|------------------------|--------|
 | `claude-cli` | Claude (Max/Pro) | `sonnet`, `opus`, `haiku`, or full id | `claude` logged in |
 | `codex-cli` | ChatGPT/Codex | `gpt-5-codex`, etc. | `codex login` + readable `~/.codex` |
 | `command` | anything | n/a | any text-in/out CLI (e.g. `ollama run llama3`) |
 
-For any other local model, use `{ provider: "command", command: "ollama", args: ["run","llama3"] }`.
+---
 
-## CLI
+## 🖥️ CLI
 
 ```bash
 engram index <dir>        # index .md/.txt files (--fresh, --incremental, --llm-edges)
-engram recall "<query>"   # -k N, --tier T, --rerank, --json, --mark-used
+engram recall "<query>"   # -k N, --tier T, --rerank, --associative, --json, --mark-used
 engram add "<text>"       # --tier, --importance, --source
 engram graph              # export the associative graph (nodes + edges) as JSON
 engram tag "<text>"       # tier/importance/emotion/topic/people as JSON (needs --llm)
-engram dream              # consolidation pass — cold-archive low-salience memories
+engram dream              # nightly maintenance: promote proven memories, then consolidate
 engram promote            # lift proven memories short-term -> long-term (--dry-run to preview)
 engram eval <file.json>   # score recall@k against a labelled set
 engram stats              # index statistics
@@ -239,19 +214,46 @@ Common flags: `--db <path>` (or `$ENGRAM_DB`), `--config <path>`,
 `--provider hashing|openai`, `--model`, `--dim`, `--openai-key`.
 LLM flags: `--llm claude|codex|none`, `--llm-model <name>`, `--tmux`, `--rerank`.
 
-## How it works (in one paragraph)
+---
+
+## 🧠 How it works
 
 On ingest, each memory is embedded and stored in SQLite, with its text mirrored
 into an FTS5 table. On `recall(query)`, two channels run: **semantic** (cosine of
 the query embedding vs every stored vector) and **lexical** (FTS5/bm25 keyword
 match). The two ranked lists are fused with **Reciprocal Rank Fusion**
-(`score += weight / (k + rank)`), then nudged by **importance** (and optionally
-**recency**). The top-k come back with a `why` trace. Full details in
+(`score += weight / (k + rank)`), then nudged by **importance** and **recency**.
+In associative mode the hybrid hits seed **spreading activation** across the graph
+— charge flows along typed edges, attenuating each hop — so memories related by
+*meaning and structure*, not just words, light up too. The top-k come back with a
+`why` trace. Full details in
 [`docs/paper/06-hybrid-retrieval.md`](docs/paper/06-hybrid-retrieval.md).
 
-## Project structure
+### What's inside
 
-```
+The full design ships in four layers. Each is independently usable and degrades
+gracefully — no LLM, no network, and no graph are all valid configurations.
+
+1. **Recall** — hybrid semantic + lexical retrieval over SQLite/FTS5, fused with
+   Reciprocal Rank Fusion and nudged by importance/recency. The foundation.
+2. **Associative graph** — typed edges between memories (similarity, entity,
+   temporal, and LLM-inferred causal/supersedes/lesson_from) with
+   spreading-activation recall (`{ associative: true }`).
+3. **Dreaming** — short-term/long-term memory management in one call. `dream()`
+   (CLI `engram dream`) promotes memories proven useful by repeated recall into a
+   durable, protected tier, then consolidates — scoring salience and
+   cold-archiving the noise.
+4. **Reinforcement & eval** — Hebbian edge strengthening on co-recall, a recall@k
+   evaluator, and a weight tuner to measure and improve retrieval.
+
+Design write-up, layer by layer, in [`docs/paper/`](docs/paper). Known limits and
+what's next: [`docs/paper/09-limitations-and-roadmap.md`](docs/paper/09-limitations-and-roadmap.md).
+
+---
+
+## 🗂️ Project structure
+
+```text
 engram/
   src/
     engram.ts            # the public Engram orchestrator
@@ -265,7 +267,7 @@ engram/
     retrieval/           # hybrid RRF fusion, LLM rerank, spreading activation
     graph/               # associative edges (similarity, entity, LLM-inferred)
     enrich/              # memory tagging (tier/importance/emotion/topic/people)
-    consolidation/       # "dreaming" — salience scoring + cold-archive
+    consolidation/       # "dreaming" — salience scoring, promotion, cold-archive
     eval/                # recall@k evaluation + weight tuning
     util/                # hashing, cosine, frontmatter, tokenisation
   test/                  # node:test suites (offline)
@@ -274,26 +276,13 @@ engram/
   docs/paper/            # research-paper-style design documentation
 ```
 
-## What's inside
+---
 
-The full design ships in four layers. Each is independently usable and degrades
-gracefully — no LLM, no network, and no graph are all valid configurations.
+<div align="center">
 
-1. **Recall** — hybrid semantic + lexical retrieval over SQLite/FTS5, fused with
-   Reciprocal Rank Fusion and nudged by importance/recency. The foundation.
-2. **Associative graph** — typed edges between memories (similarity, entity,
-   temporal, and LLM-inferred causal/supersedes/lesson_from) with
-   spreading-activation recall (`{ associative: true }`).
-3. **Dreaming** — short-term/long-term memory management in one call. `dream()`
-   (CLI `engram dream`) promotes memories proven useful by repeated recall into a
-   durable, protected tier, then consolidates — scoring salience and
-   cold-archiving the noise. One cron line is the whole maintenance story.
-4. **Reinforcement & eval** — Hebbian edge strengthening on co-recall, a recall@k
-   evaluator, and a weight tuner to measure and improve retrieval.
+Grounded in the agent-memory literature (Generative Agents' recency/importance/relevance
+scoring; hybrid vector+lexical retrieval as used by Mem0/Zep).
 
-Design write-up, layer by layer, in [`docs/paper/`](docs/paper). Known limits and
-what's next: [`docs/paper/09-limitations-and-roadmap.md`](docs/paper/09-limitations-and-roadmap.md).
+**MIT** licensed — see [LICENSE](LICENSE).
 
-## License
-
-MIT — see [LICENSE](LICENSE).
+</div>
