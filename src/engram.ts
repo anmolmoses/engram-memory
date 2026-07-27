@@ -5,7 +5,11 @@ import { ingestDirectory, type IngestOptions } from "./ingest/markdown.js";
 import { buildEdges, type EdgeBuildOptions, type EdgeBuildResult } from "./graph/build.js";
 import { buildLlmEdges, type LlmEdgeOptions, type LlmEdgeResult } from "./graph/llm-edges.js";
 import { extractEntities } from "./graph/entities.js";
-import { tagMemories as tagMemoriesImpl, type MemoryTags } from "./enrich/tagging.js";
+import {
+  tagMemories as tagMemoriesImpl,
+  type MemoryTaggingContext,
+  type MemoryTags,
+} from "./enrich/tagging.js";
 import { affectFromMetadata } from "./enrich/emotions.js";
 import {
   consolidate, reinforce, readmit, salience, DEFAULT_SALIENCE,
@@ -17,6 +21,8 @@ import { cosine } from "./util/cosine.js";
 import { spreadActivation } from "./retrieval/spreading.js";
 import { llmRerank } from "./retrieval/rerank.js";
 import { sha256 } from "./util/hash.js";
+import { existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import type { MemoryRecord, MemoryStore, StoreStats } from "./store/types.js";
 import type {
   EngramOptions,
@@ -64,6 +70,12 @@ export interface IndexOptions extends IngestOptions {
    * paid embedders. Deleted files/chunks reconcile on the next full reindex.
    */
   incremental?: boolean;
+  /**
+   * Also remove memories whose SOURCE FILE no longer exists under `dir`.
+   * Incremental indexing otherwise keeps a deleted file's chunks forever —
+   * recallable, uncorrectable, and invisible until someone reads the store.
+   */
+  pruneMissing?: boolean;
   /**
    * Rebuild the associative graph after indexing. `true`/omitted uses the
    * default builders (similar + temporal_next); `false` skips graph building;
@@ -178,14 +190,54 @@ export class Engram {
     // Mutually exclusive with fresh/prune.
     if (opts.incremental && !opts.fresh) {
       const before = inputs.length;
+      // Prune chunks that no longer exist in their file. Editing a file
+      // re-chunks it, and the ids of the OLD chunks are never produced again —
+      // without this they linger forever, serving text that was deleted and
+      // tags that were never updated. (A full index prunes by source; the
+      // incremental path never did, which is exactly why it was invisible.)
+      const validBySource = new Map<string, Set<string>>();
+      for (const i of inputs) {
+        if (!i.source) continue;
+        let set = validBySource.get(i.source);
+        if (!set) validBySource.set(i.source, (set = new Set()));
+        set.add(i.id ?? sha256(i.content).slice(0, 16));
+      }
+      const orphans: string[] = [];
+      for (const row of this.store.idsForSources([...validBySource.keys()])) {
+        if (!validBySource.get(row.source)?.has(row.id)) orphans.push(row.id);
+      }
+      // Deleted FILES leave every one of their chunks behind, which is worse:
+      // they stay recallable forever with no file to correct them. Opt-in,
+      // because a store may legitimately hold memories from other roots or
+      // from `add()` — this only removes rows whose source is missing from disk
+      // under the directory being indexed.
+      if (opts.pruneMissing) {
+        const live = new Set(validBySource.keys());
+        for (const rec of this.store.allRecords()) {
+          if (!rec.source || live.has(rec.source)) continue;
+          if (!existsSync(resolvePath(dir, rec.source))) orphans.push(rec.id);
+        }
+      }
+      pruned += this.store.deleteByIds([...new Set(orphans)]);
+      // Text unchanged but TAGS changed (a retag/backfill rewrites frontmatter
+      // only): the chunk must not be re-embedded, but its metadata has to be
+      // refreshed — otherwise the store serves the old emotion/interpretation
+      // forever, since the content hash never moves.
+      const retag: Array<{ id: string; metadata: Record<string, unknown> | null; tier?: string | null; importance?: number }> = [];
       inputs = inputs.filter((i) => {
         const id = i.id ?? sha256(i.content).slice(0, 16);
         const existing = this.store.getById(id);
         // Keep chunks that are new OR whose content changed (edited in place) —
         // otherwise an edited paragraph keeps serving its outdated text until
         // the next full reindex.
-        return !existing || existing.contentHash !== sha256(i.content);
+        if (!existing || existing.contentHash !== sha256(i.content)) return true;
+        const next = i.metadata ?? null;
+        if (JSON.stringify(existing.metadata ?? null) !== JSON.stringify(next)) {
+          retag.push({ id, metadata: next, tier: i.tier ?? null, importance: i.importance });
+        }
+        return false;
       });
+      const retagged = this.store.updateMetadata(retag);
       const addedIds = await this.addManyResult(inputs);
       if (opts.edges !== false && addedIds.length > 0) {
         this.buildEdges({
@@ -195,7 +247,7 @@ export class Engram {
       }
       return {
         directory: dir, files: sources.size, memories: addedIds.length,
-        pruned: 0, skipped: before - addedIds.length,
+        pruned, skipped: before - addedIds.length - retagged, retagged,
         durationMs: Date.now() - start,
         embeddingModel: this.embedding.name,
       };
@@ -314,8 +366,11 @@ export class Engram {
    * using the configured LLM (heuristic neutral/episodic fallback without one).
    * Returns one tag set per input, in order. Used to enrich captured memories.
    */
-  async tagMemories(texts: string[]): Promise<MemoryTags[]> {
-    return tagMemoriesImpl(this.llm, texts);
+  async tagMemories(
+    texts: string[],
+    context: MemoryTaggingContext = {},
+  ): Promise<MemoryTags[]> {
+    return tagMemoriesImpl(this.llm, texts, context);
   }
 
   /**
@@ -548,6 +603,21 @@ export class Engram {
         emotion: affect.emotion,
         emotionIntensity: affect.intensity || undefined,
         topic: typeof inner.topic === "string" && inner.topic ? inner.topic : undefined,
+        sourceAgent: typeof inner.source_agent === "string" && inner.source_agent
+          ? inner.source_agent
+          : undefined,
+        sourceAgentName: typeof inner.source_agent_name === "string" && inner.source_agent_name
+          ? inner.source_agent_name
+          : undefined,
+        interpretation: typeof inner.interpretation === "string" && inner.interpretation
+          ? inner.interpretation
+          : undefined,
+        agentEmotion: typeof inner.agent_emotion === "string" && inner.agent_emotion
+          ? inner.agent_emotion
+          : undefined,
+        agentEmotionIntensity: typeof inner.agent_emotion_intensity === "number"
+          ? inner.agent_emotion_intensity
+          : undefined,
       };
     });
     const edges: GraphEdgeView[] = this.store.allEdges().map((e) => ({

@@ -5,7 +5,21 @@ import { Engram } from "../src/index.js";
 test("graphExport returns nodes, edges, and stats for visualisation", async () => {
   const mem = new Engram({ dbPath: ":memory:" });
   await mem.addMany([
-    { id: "a", content: "the deploy broke the `relevance_score` column", source: "d.md", createdAt: 1 },
+    {
+      id: "a",
+      content: "the deploy broke the `relevance_score` column",
+      source: "d.md",
+      createdAt: 1,
+      metadata: {
+        metadata: {
+          source_agent: "edith",
+          source_agent_name: "Edith",
+          interpretation: "This migration needs verification before release.",
+          agent_emotion: "concern",
+          agent_emotion_intensity: 0.7,
+        },
+      },
+    },
     { id: "b", content: "added a migration creating `relevance_score`", source: "d.md", createdAt: 2 },
   ]);
   mem.buildEdges();
@@ -13,6 +27,12 @@ test("graphExport returns nodes, edges, and stats for visualisation", async () =
 
   assert.equal(g.nodes.length, 2);
   assert.ok(g.nodes.every((n) => typeof n.label === "string" && n.label.length > 0));
+  const observed = g.nodes.find((n) => n.id === "a");
+  assert.equal(observed?.sourceAgent, "edith");
+  assert.equal(observed?.sourceAgentName, "Edith");
+  assert.equal(observed?.agentEmotion, "concern");
+  assert.equal(observed?.agentEmotionIntensity, 0.7);
+  assert.match(observed?.interpretation ?? "", /verification/);
   assert.ok(g.edges.length > 0, "should have at least temporal/about edges");
   assert.ok(g.edges.every((e) => e.src && e.dst && e.type && typeof e.weight === "number"));
   assert.equal(g.stats.count, 2);

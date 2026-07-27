@@ -50,7 +50,8 @@ COMMANDS
   recall <query...>    Retrieve the most relevant memories for a query
   add <text...>        Add a single memory
   graph                Export the associative graph (nodes + edges) as JSON
-  tag <text>           Tag a memory (tier/importance/emotion/topic/people) as JSON
+  tag <text>           Tag a memory (structure/emotions/interpretation/provenance) as JSON
+  complete <prompt>    Run a raw prompt through the configured LLM (stdin also accepted)
   dream                Nightly maintenance: promote proven memories, then consolidate
   promote              Promote proven memories short-term -> long-term (durable tier)
   eval <file.json>     Score recall@k against a labelled set ([{query,relevantIds}])
@@ -75,6 +76,7 @@ index OPTIONS
   --chunk <mode>       auto (default) | file | paragraph | heading
   --fresh              Wipe the index before indexing (clean rebuild)
   --incremental        Only embed new/changed content (skip unchanged chunks)
+  --prune-missing      With --incremental, drop memories whose source file is gone
   --no-graph           Skip building the associative graph (edges)
   --llm-edges          After indexing, derive caused/supersedes/lesson_from
                        edges with the configured LLM (needs --llm)
@@ -174,6 +176,7 @@ async function main(): Promise<void> {
           chunk: (flags.chunk as never) || "auto",
           fresh: Boolean(flags.fresh),
           incremental: Boolean(flags.incremental),
+          pruneMissing: Boolean(flags["prune-missing"]),
           edges: flags["no-graph"] ? false : undefined,
         });
         process.stdout.write(
@@ -281,7 +284,10 @@ async function main(): Promise<void> {
         } else {
           texts = [];
         }
-        const tags = await engram.tagMemories(texts);
+        const tags = await engram.tagMemories(texts, {
+          agentName: typeof flags.agent === "string" ? flags.agent : undefined,
+          agentPerspective: typeof flags.perspective === "string" ? flags.perspective : undefined,
+        });
         process.stdout.write(`${JSON.stringify(tags)}\n`);
         // Whole-batch LLM failure means these are neutral fallbacks, not
         // judgments. Exit non-zero so gating callers (which would silently
@@ -293,8 +299,39 @@ async function main(): Promise<void> {
         break;
       }
 
+      case "complete": {
+        // Raw completion through the configured LLM — the same subscription CLI
+        // that powers tagging, exposed so an embedding app can reason over its
+        // own memories without wiring up a second provider (or an API key).
+        const positional = positionals.slice(1).join(" ").trim();
+        let prompt = positional;
+        if (!prompt && !process.stdin.isTTY) {
+          const chunks: Buffer[] = [];
+          for await (const c of process.stdin) chunks.push(c as Buffer);
+          prompt = Buffer.concat(chunks).toString("utf-8").trim();
+        }
+        if (!prompt) {
+          process.stderr.write("complete: no prompt (pass as an argument or on stdin)\n");
+          process.exitCode = 1;
+          break;
+        }
+        if (!engram.llm) {
+          process.stderr.write("complete: no LLM configured (set llm.provider in the config)\n");
+          process.exitCode = 2;
+          break;
+        }
+        process.stdout.write(await engram.llm.complete(prompt));
+        break;
+      }
+
       case "graph": {
-        const g = engram.graphExport();
+        // --label-chars lets a viewer ask for longer node labels (the default 120
+        // truncates mid-sentence, which reads as a broken card in a UI that shows
+        // the label as the memory's text).
+        const labelChars = Number.parseInt(String(flags["label-chars"] ?? ""), 10);
+        const g = engram.graphExport(
+          Number.isFinite(labelChars) && labelChars > 0 ? { labelChars } : {},
+        );
         // Bundle the emotion palette + family legend so any dashboard consuming
         // this JSON (engram's own, or an embedding app's) colours neurons identically.
         const out = { ...g, palette: emotionPalette(), families: emotionFamilyLegend() };

@@ -12,19 +12,28 @@ test("parseTags extracts a JSON array, ignores junk", () => {
 test("tagMemories: LLM tags are coerced + clamped; order preserved", async () => {
   const stub: LLMProvider = {
     name: "stub",
-    async complete() {
+    async complete(prompt) {
+      assert.match(prompt, /captured by Edith/);
+      assert.match(prompt, /engineering quality/);
       return JSON.stringify([
-        { tier: "semantic", importance: 9, emotion: "Proud", emotionIntensity: 0.8, topic: "deploy rule", people: ["@Jordan"], summary: "a rule" },
+        { tier: "semantic", importance: 9, emotion: "Proud", emotionIntensity: 0.8, topic: "deploy rule", people: ["@Jordan"], summary: "a rule", interpretation: "This protects release confidence.", agentEmotion: "Vigilance", agentEmotionIntensity: 0.7 },
         { tier: "bogus", importance: 2, emotion: "", emotionIntensity: 50, topic: "x", people: "nope", summary: "" },
       ]);
     },
   };
-  const tags = await tagMemories(stub, ["always migrate first", "lunch"]);
+  const tags = await tagMemories(
+    stub,
+    ["always migrate first", "lunch"],
+    { agentName: "Edith", agentPerspective: "engineering quality" },
+  );
   assert.equal(tags.length, 2);
   // item 1: importance 9 → 0.9 (1..10 scale); emotion lowercased; @ stripped
   assert.equal(tags[0]!.tier, "semantic");
   assert.equal(tags[0]!.importance, 0.9);
   assert.equal(tags[0]!.emotion, "proud");
+  assert.equal(tags[0]!.interpretation, "This protects release confidence.");
+  assert.equal(tags[0]!.agentEmotion, "vigilance");
+  assert.equal(tags[0]!.agentEmotionIntensity, 0.7);
   assert.deepEqual(tags[0]!.people, ["jordan"]);
   // item 2: invalid tier → episodic; intensity clamped to 1; emotion default; bad people → []
   assert.equal(tags[1]!.tier, "episodic");
@@ -38,6 +47,7 @@ test("tagMemories falls back to neutral/episodic without an LLM or on failure", 
   assert.equal(noLlm[0]!.tier, "episodic");
   assert.equal(noLlm[0]!.emotion, "neutral");
   assert.ok(noLlm[0]!.summary.length > 0);
+  assert.ok(noLlm[0]!.interpretation.length > 0);
 
   const thrower: LLMProvider = { name: "x", async complete() { throw new Error("down"); } };
   const failed = await tagMemories(thrower, ["a", "b"]);

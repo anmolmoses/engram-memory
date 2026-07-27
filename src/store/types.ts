@@ -113,6 +113,23 @@ export interface MemoryStore {
   /** Every memory record (full scan). Used by graph construction / consolidation. */
   allRecords(): MemoryRecord[];
   count(): number;
+  /**
+   * Rewrite tags on memories whose TEXT is unchanged — a retag/backfill that
+   * edits frontmatter only. The embedding is intentionally left alone, since
+   * the content it encodes did not change. Returns rows updated.
+   */
+  updateMetadata(
+    rows: Array<{
+      id: string;
+      metadata: Record<string, unknown> | null;
+      tier?: string | null;
+      importance?: number;
+    }>,
+  ): number;
+  /** Every stored id belonging to the given source files. */
+  idsForSources(sources: string[]): Array<{ id: string; source: string }>;
+  /** Remove specific rows (and their edges) by id. Returns rows deleted. */
+  deleteByIds(ids: string[]): number;
   /** Bump recency/frequency counters for the given ids. */
   markUsed(ids: string[]): void;
   /** Set the cold-archive flag for the given ids (Phase 3 consolidation). */

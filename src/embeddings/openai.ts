@@ -16,6 +16,12 @@ export interface OpenAIEmbeddingOptions {
 }
 
 /**
+ * Character budget per input. The models cap at 8192 tokens; ~3.2 chars/token
+ * is a conservative ratio for prose, leaving headroom for dense/code-like text.
+ */
+const MAX_EMBED_CHARS = 24_000;
+
+/**
  * Real semantic embeddings via the OpenAI embeddings API.
  *
  * Optional by design: engram never requires it. Supply an API key (arg or
@@ -46,7 +52,14 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   async embed(texts: string[]): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
-    const body: Record<string, unknown> = { model: this.model, input: texts };
+    // One over-long chunk otherwise 400s the whole request, which fails the
+    // entire index run — a single big file taking down every other memory with
+    // it. Truncate for the EMBEDDING only; the stored content stays complete,
+    // and the leading text of a chunk is what carries its topic anyway.
+    const body: Record<string, unknown> = {
+      model: this.model,
+      input: texts.map((t) => (t.length > MAX_EMBED_CHARS ? t.slice(0, MAX_EMBED_CHARS) : t)),
+    };
     if (this.requestedDim) body.dimensions = this.requestedDim;
 
     const res = await fetch(`${this.baseUrl}/embeddings`, {

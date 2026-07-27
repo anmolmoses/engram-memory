@@ -376,9 +376,13 @@ export const DASHBOARD_HTML = `<!doctype html>
     selected = n;
     document.getElementById("panel").style.display = "block";
     document.getElementById("panelTitle").textContent = (n.tier || "memory") + (n.archived ? " · archived" : "");
-    document.getElementById("panelBody").textContent = n.label || "(no preview)";
+    document.getElementById("panelBody").textContent =
+      (n.label || "(no preview)") +
+      (n.interpretation ? "\n\n" + (n.sourceAgentName || n.sourceAgent || "agent") + " interpreted: " + n.interpretation : "");
     var tags = [];
     if (n.emotion) tags.push(n.emotion + (n.emotionIntensity ? " " + Math.round(n.emotionIntensity * 100) + "%" : ""));
+    if (n.agentEmotion) tags.push((n.sourceAgentName || n.sourceAgent || "agent") + ": " + n.agentEmotion + (n.agentEmotionIntensity ? " " + Math.round(n.agentEmotionIntensity * 100) + "%" : ""));
+    if (n.sourceAgentName || n.sourceAgent) tags.push("captured by " + (n.sourceAgentName || n.sourceAgent));
     if (n.topic) tags.push(n.topic);
     tags.push("importance " + (n.importance || 0).toFixed(2));
     if (n.useCount) tags.push(n.useCount + "× recalled");

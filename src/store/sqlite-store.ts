@@ -297,6 +297,66 @@ export class SqliteStore implements MemoryStore {
     return (this.db.prepare(`SELECT COUNT(*) AS n FROM memory`).get() as { n: number }).n;
   }
 
+  /**
+   * Refresh the tags of memories whose TEXT is unchanged — a retag/backfill that
+   * rewrites frontmatter only. Deliberately does not touch the embedding: the
+   * content it encodes hasn't changed, so re-embedding would be pure cost.
+   */
+  updateMetadata(
+    rows: Array<{ id: string; metadata: Record<string, unknown> | null; tier?: string | null; importance?: number }>,
+  ): number {
+    if (rows.length === 0) return 0;
+    const stmt = this.db.prepare(
+      `UPDATE memory SET metadata = @metadata, tier = COALESCE(@tier, tier),
+         importance = COALESCE(@importance, importance) WHERE id = @id`,
+    );
+    let n = 0;
+    const tx = this.db.transaction((items: typeof rows) => {
+      for (const r of items) {
+        const res = stmt.run({
+          id: r.id,
+          metadata: r.metadata ? JSON.stringify(r.metadata) : null,
+          tier: r.tier ?? null,
+          importance: typeof r.importance === "number" ? r.importance : null,
+        });
+        n += res.changes;
+      }
+    });
+    tx(rows);
+    return n;
+  }
+
+  /** Every stored id belonging to the given source files. */
+  idsForSources(sources: string[]): Array<{ id: string; source: string }> {
+    if (sources.length === 0) return [];
+    const out: Array<{ id: string; source: string }> = [];
+    // Chunked IN clauses: SQLite caps bound parameters, and a re-index can
+    // touch a few thousand files.
+    for (let i = 0; i < sources.length; i += 400) {
+      const slice = sources.slice(i, i + 400);
+      const ph = slice.map(() => "?").join(",");
+      out.push(
+        ...(this.db
+          .prepare(`SELECT id, source FROM memory WHERE source IN (${ph})`)
+          .all(...slice) as Array<{ id: string; source: string }>),
+      );
+    }
+    return out;
+  }
+
+  /** Remove specific rows by id (and their edges). Returns rows deleted. */
+  deleteByIds(ids: string[]): number {
+    if (ids.length === 0) return 0;
+    let n = 0;
+    for (let i = 0; i < ids.length; i += 400) {
+      const slice = ids.slice(i, i + 400);
+      const ph = slice.map(() => "?").join(",");
+      this.deleteEdgesFor(slice);
+      n += this.db.prepare(`DELETE FROM memory WHERE id IN (${ph})`).run(...slice).changes;
+    }
+    return n;
+  }
+
   markUsed(ids: string[]): void {
     if (ids.length === 0) return;
     const now = Date.now();

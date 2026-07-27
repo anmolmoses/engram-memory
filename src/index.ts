@@ -65,7 +65,12 @@ export {
   type EdgeBuildResult,
 } from "./graph/build.js";
 export { extractEntities } from "./graph/entities.js";
-export { tagMemories, parseTags, type MemoryTags } from "./enrich/tagging.js";
+export {
+  tagMemories,
+  parseTags,
+  type MemoryTaggingContext,
+  type MemoryTags,
+} from "./enrich/tagging.js";
 export {
   EMOTIONS,
   EMOTION_FAMILIES,

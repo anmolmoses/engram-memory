@@ -129,6 +129,11 @@ export interface IndexResult {
   pruned: number;
   /** Chunks left untouched because they were already stored and unchanged (incremental only). */
   skipped: number;
+  /**
+   * Chunks whose text was unchanged but whose tags were rewritten in place
+   * (a retag/backfill). Metadata refreshed, embedding deliberately reused.
+   */
+  retagged?: number;
   durationMs: number;
   embeddingModel: string;
 }
@@ -153,6 +158,16 @@ export interface GraphNode {
   emotionIntensity?: number;
   /** Topic tag, if enriched. */
   topic?: string;
+  /** Agent runtime that observed/captured the memory. */
+  sourceAgent?: string;
+  /** Human-readable observing agent name. */
+  sourceAgentName?: string;
+  /** Observer-specific meaning attached at capture time. */
+  interpretation?: string;
+  /** Observing agent's emotional stance, separate from conversation emotion. */
+  agentEmotion?: string;
+  /** Intensity of the observing agent's emotional stance, 0..1. */
+  agentEmotionIntensity?: number;
 }
 
 export interface GraphEdgeView {
