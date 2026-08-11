@@ -55,7 +55,17 @@ export async function recall(
   const entries = new Map<string, FuseEntry>();
 
   // --- Channel 1: semantic (vector cosine) ---
-  const qEmb = (await provider.embed([query]))[0];
+  // A broken embedder (revoked API key, model download failed, offline) must
+  // DEGRADE recall, never kill it: the lexical channel below still answers
+  // keyword queries perfectly well. Silently returning nothing at all is the
+  // worst outcome — it reads as "you have no such memory" when the memory is
+  // right there. Callers that need to surface the breakage read `degraded`.
+  let qEmb: Float32Array | undefined;
+  try {
+    qEmb = (await provider.embed([query]))[0];
+  } catch (err) {
+    opts.onDegraded?.(err instanceof Error ? err : new Error(String(err)));
+  }
   if (qEmb) {
     const ranked = store
       .allVectors()

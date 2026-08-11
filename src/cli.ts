@@ -62,8 +62,11 @@ COMMANDS
 COMMON OPTIONS
   --db <path>          SQLite file (default: $ENGRAM_DB or ./engram.db)
   --config <path>      Load settings from a JSON config (default: ./engram.config.json)
-  --provider <name>    Embedding provider: hashing (default, offline) | openai
-  --model <name>       Embedding model (openai), e.g. text-embedding-3-small
+  --provider <name>    Embedding provider: hashing (default, offline)
+                       | local (offline ONNX model, real semantics, no key)
+                       | openai
+  --model <name>       Embedding model — local e.g. Xenova/all-MiniLM-L6-v2,
+                       openai e.g. text-embedding-3-small
   --dim <n>            Embedding dimensions
   --openai-key <key>   OpenAI API key (or set OPENAI_API_KEY)
 
@@ -127,6 +130,9 @@ function embeddingFromFlags(flags: Record<string, string | boolean>): EmbeddingC
   if (!flags.provider && !flags.dim) return undefined;
   const provider = (flags.provider as string) || "hashing";
   const dim = flags.dim ? Number(flags.dim) : undefined;
+  if (provider === "local") {
+    return { provider: "local", model: (flags.model as string) || undefined, dim };
+  }
   if (provider === "openai") {
     return {
       provider: "openai",
@@ -214,6 +220,12 @@ async function main(): Promise<void> {
               decay: flags.decay ? Number(flags.decay) : undefined,
             }
           : undefined;
+        // Lexical-only fallback when the embedder is unavailable: recall still
+        // answers, and we say so once on stderr (and in --json) rather than
+        // failing the command — a broken embedder shouldn't look like an empty
+        // memory. Reported once per run even though recall embeds twice
+        // (seed pool + rerank pool).
+        let degraded: string | undefined;
         const recallOpts = {
           k: flags.k ? Number(flags.k) : undefined,
           tier: (flags.tier as string) || undefined,
@@ -222,12 +234,19 @@ async function main(): Promise<void> {
           rerank,
           associative,
           spread,
+          onDegraded: (err: Error) => {
+            if (degraded) return;
+            degraded = err.message;
+            process.stderr.write(`Warning: embeddings unavailable — lexical-only recall. ${err.message}\n`);
+          },
         };
 
         // --trace: emit results + the full activation trace (for the dashboard).
         if (trace) {
           const out = await engram.recallTrace(query, recallOpts);
-          process.stdout.write(`${JSON.stringify(out, null, flags.json ? 2 : 0)}\n`);
+          process.stdout.write(
+            `${JSON.stringify(degraded ? { ...out, degraded } : out, null, flags.json ? 2 : 0)}\n`,
+          );
           break;
         }
 

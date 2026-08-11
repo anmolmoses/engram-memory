@@ -1,4 +1,5 @@
 import { HashingEmbeddingProvider } from "./hashing.js";
+import { LocalEmbeddingProvider } from "./local.js";
 import { OpenAIEmbeddingProvider } from "./openai.js";
 
 /**
@@ -17,6 +18,7 @@ export interface EmbeddingProvider {
 export type EmbeddingConfig =
   | EmbeddingProvider
   | { provider: "hashing"; dim?: number }
+  | { provider: "local"; model?: string; dim?: number; cacheDir?: string }
   | { provider: "openai"; apiKey?: string; model?: string; dim?: number };
 
 function isProvider(x: EmbeddingConfig): x is EmbeddingProvider {
@@ -34,6 +36,8 @@ export function createEmbeddingProvider(config?: EmbeddingConfig): EmbeddingProv
   switch (config.provider) {
     case "openai":
       return new OpenAIEmbeddingProvider(config);
+    case "local":
+      return new LocalEmbeddingProvider(config);
     case "hashing":
       return new HashingEmbeddingProvider(config.dim);
     default:

@@ -12,7 +12,7 @@ offline by default · zero API keys to start · the whole index in one SQLite fi
 </p>
 
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-77%20passing-22c55e?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-96%20passing-22c55e?style=for-the-badge)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
@@ -65,7 +65,7 @@ It surfaced the right memory even though the query never said "migration" or
 | 🎨 **Affect-aware tagging** | Memories are tagged from a **comprehensive human-emotion palette** (130+ feelings across joy, love, awe, grief, fear, anger, shame, nostalgia…), so recall and the dashboard can reason and colour by how a memory *felt*. |
 | 💪 **Reinforcement + eval** | Hebbian edge strengthening on co-recall, plus a built-in **recall@k** evaluator and weight tuner to measure and improve retrieval. |
 | 🔌 **Zero-dependency by default** | An offline, deterministic hashing embedder — no API keys, no network, no native model. Great for tests, demos, and air-gapped agents. |
-| 🧩 **Pluggable everything** | Swap embeddings (OpenAI built-in, or any model via a one-method interface). Use the **Claude/ChatGPT CLI subscription you already pay for** to rerank, tag, and infer edges — no API key. |
+| 🧩 **Pluggable everything** | Swap embeddings (a **local ONNX model** and OpenAI are built in, or any model via a one-method interface). Use the **Claude/ChatGPT CLI subscription you already pay for** to rerank, tag, and infer edges — no API key. |
 | 📄 **Markdown-native** | Frontmatter parsing, recursive walk, smart auto-chunking, and **incremental** indexing that only re-embeds changed content. |
 | 🔎 **Explainable** | Every result carries a `why` trace (`semantic #1 · lexical #2 · importance 0.90`). Recall you can audit. |
 | 💾 **One file = the whole index** | A single SQLite file you can copy, back up, or delete and rebuild. Tiny surface: one `Engram` class, a small CLI, no framework. |
@@ -91,10 +91,10 @@ Or clone it to hack on / run the CLI locally:
 ```bash
 git clone https://github.com/anmolmoses/engram-memory.git && cd engram-memory
 npm install        # runs the build via the prepare script
-npm test           # 77 tests, runs offline
+npm test           # 96 tests, runs offline
 ```
 
-Requires **Node ≥ 20**. The only runtime dependency is `better-sqlite3`.
+Requires **Node ≥ 20**. The only runtime dependency is `better-sqlite3`; `@huggingface/transformers` is optional and only needed for the local embedding provider.
 
 ---
 
@@ -157,14 +157,33 @@ The default embedder is lexical-ish (it has no learned semantics — "car" and
 "automobile" don't converge). For real semantic recall, pass a provider:
 
 ```ts
+// Local ONNX model — no API key, offline after the first run, no per-call cost.
+// Needs the optional dep: npm i @huggingface/transformers
 const mem = new Engram({
+  dbPath: "agent-memory.db",
+  embedding: { provider: "local", model: "Xenova/all-MiniLM-L6-v2" }, // 384-dim
+});
+
+// Or a hosted embedder:
+const hosted = new Engram({
   dbPath: "agent-memory.db",
   embedding: { provider: "openai", model: "text-embedding-3-small" }, // uses OPENAI_API_KEY
 });
 ```
 
-Or implement the `EmbeddingProvider` interface (`{ name, dim, embed(texts) }`) for a
-local model, Cohere, Voyage, etc. Nothing else in your code changes.
+Or implement the `EmbeddingProvider` interface (`{ name, dim, embed(texts) }`) for
+Cohere, Voyage, your own service, etc. Nothing else in your code changes.
+
+Two things to know when you switch embedders:
+
+- **Reindex.** Vectors of different dimensions are never compared, so an existing
+  store's vectors go unused until you reindex (`index --fresh`). Recall keeps
+  working in the meantime — it just runs on the keyword channel alone.
+- **A dead embedder degrades recall, it doesn't break it.** If the provider throws
+  (revoked key, no network, model download failed), recall falls back to lexical
+  and reports it via `onDegraded` — the CLI warns on stderr and adds `degraded` to
+  `--trace --json`. Silence would be worse: keyword-only results look exactly like
+  "no such memory".
 
 ---
 
@@ -301,7 +320,7 @@ engram help
 ```
 
 Common flags: `--db <path>` (or `$ENGRAM_DB`), `--config <path>`,
-`--provider hashing|openai`, `--model`, `--dim`, `--openai-key`.
+`--provider hashing|local|openai`, `--model`, `--dim`, `--openai-key`.
 LLM flags: `--llm claude|codex|none`, `--llm-model <name>`, `--tmux`, `--rerank`.
 
 ---
@@ -379,7 +398,7 @@ engram/
     cli.ts               # command-line interface
     config.ts            # engram.config.json loader
     store/               # SQLite + FTS5 storage (swappable behind MemoryStore)
-    embeddings/          # pluggable providers (hashing default, openai optional)
+    embeddings/          # pluggable providers (hashing default, local ONNX / openai optional)
     llm/                 # subscription-CLI providers (claude, codex, command)
     ingest/              # markdown frontmatter + chunking
     retrieval/           # hybrid RRF fusion, LLM rerank, spreading activation

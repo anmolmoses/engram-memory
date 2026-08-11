@@ -104,6 +104,12 @@ export interface RecallOptions {
    * Default true; no-op when the glossary is empty.
    */
   entitySeeding?: boolean;
+  /**
+   * Called when the semantic channel could not run (embedder threw) and recall
+   * fell back to lexical-only. Recall still returns hits — this is how a caller
+   * learns the results are keyword-only, e.g. to warn in a UI or a log.
+   */
+  onDegraded?: (error: Error) => void;
 }
 
 export interface RecallResult {
