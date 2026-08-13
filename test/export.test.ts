@@ -28,6 +28,7 @@ test("graphExport returns nodes, edges, and stats for visualisation", async () =
   assert.equal(g.nodes.length, 2);
   assert.ok(g.nodes.every((n) => typeof n.label === "string" && n.label.length > 0));
   const observed = g.nodes.find((n) => n.id === "a");
+  assert.equal(observed?.createdAt, 1);
   assert.equal(observed?.sourceAgent, "edith");
   assert.equal(observed?.sourceAgentName, "Edith");
   assert.equal(observed?.agentEmotion, "concern");

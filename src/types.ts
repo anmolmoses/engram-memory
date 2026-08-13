@@ -150,6 +150,8 @@ export interface GraphNode {
   id: string;
   /** Truncated content preview (full text omitted to keep exports light). */
   label: string;
+  /** When the memory itself occurred/was authored, as Unix milliseconds. */
+  createdAt: number;
   tier: string | null;
   importance: number;
   source: string | null;

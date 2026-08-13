@@ -594,6 +594,7 @@ export class Engram {
       return {
         id: r.id,
         label: r.content.replace(/\s+/g, " ").trim().slice(0, labelChars),
+        createdAt: r.createdAt,
         tier: r.tier,
         importance: r.importance,
         source: r.source,
