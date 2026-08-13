@@ -155,6 +155,8 @@ export interface GraphNode {
   tier: string | null;
   importance: number;
   source: string | null;
+  /** Slack participant IDs retained by capture, for display-name resolution. */
+  authors?: string[];
   useCount: number;
   /** Cold-archived by consolidation (Phase 3). */
   archived: boolean;

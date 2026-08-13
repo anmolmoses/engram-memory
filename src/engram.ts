@@ -591,6 +591,9 @@ export class Engram {
       // back to the top level for memories tagged a different way.
       const inner = (md.metadata && typeof md.metadata === "object" ? md.metadata : md) as Record<string, unknown>;
       const affect = affectFromMetadata(r.metadata);
+      const authors = [inner.source_authors, inner.author]
+        .filter((v): v is string => typeof v === "string")
+        .flatMap((v) => v.split(",").map((id) => id.trim()).filter(Boolean));
       return {
         id: r.id,
         label: r.content.replace(/\s+/g, " ").trim().slice(0, labelChars),
@@ -598,6 +601,7 @@ export class Engram {
         tier: r.tier,
         importance: r.importance,
         source: r.source,
+        authors: [...new Set(authors)],
         useCount: r.useCount,
         archived: r.archived,
         salience: salience(r, now, DEFAULT_SALIENCE),

@@ -14,6 +14,7 @@ test("graphExport returns nodes, edges, and stats for visualisation", async () =
         metadata: {
           source_agent: "edith",
           source_agent_name: "Edith",
+          source_authors: "U123, U456",
           interpretation: "This migration needs verification before release.",
           agent_emotion: "concern",
           agent_emotion_intensity: 0.7,
@@ -31,6 +32,7 @@ test("graphExport returns nodes, edges, and stats for visualisation", async () =
   assert.equal(observed?.createdAt, 1);
   assert.equal(observed?.sourceAgent, "edith");
   assert.equal(observed?.sourceAgentName, "Edith");
+  assert.deepEqual(observed?.authors, ["U123", "U456"]);
   assert.equal(observed?.agentEmotion, "concern");
   assert.equal(observed?.agentEmotionIntensity, 0.7);
   assert.match(observed?.interpretation ?? "", /verification/);
