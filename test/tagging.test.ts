@@ -15,6 +15,9 @@ test("tagMemories: LLM tags are coerced + clamped; order preserved", async () =>
     async complete(prompt) {
       assert.match(prompt, /captured by Edith/);
       assert.match(prompt, /engineering quality/);
+      assert.match(prompt, /SPEAKER ATTRIBUTION IS NON-NEGOTIABLE/);
+      assert.match(prompt, /Never convert another speaker's first-person admission/);
+      assert.match(prompt, /Apply the same attribution rule to summary, agentEmotion, and agentEmotionIntensity/);
       return JSON.stringify([
         { tier: "semantic", importance: 9, emotion: "Proud", emotionIntensity: 0.8, topic: "deploy rule", people: ["@Jordan"], summary: "a rule", interpretation: "This protects release confidence.", agentEmotion: "Vigilance", agentEmotionIntensity: 0.7 },
         { tier: "bogus", importance: 2, emotion: "", emotionIntensity: 50, topic: "x", people: "nope", summary: "" },

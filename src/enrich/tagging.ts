@@ -134,7 +134,14 @@ function buildPrompt(texts: string[], context: MemoryTaggingContext): string {
     `meant to her and why she'd want to remember it. Write it the way she would say it out loud later: specific, ` +
     `plain, a little opinionated, naming the people and the thing at stake. NEVER use third person, never write ` +
     `"${observer} retained/captured/recorded this", and never narrate the archiving act itself. Stay grounded in ` +
-    `the text and do not invent facts. Keep it under 45 words\n\n` +
+    `the text and do not invent facts. Keep it under 45 words.\n` +
+    `  SPEAKER ATTRIBUTION IS NON-NEGOTIABLE: speaker labels such as **Junior:** or **Anmol:** identify who performed ` +
+    `the following action or said "I". Never convert another speaker's first-person admission, decision, feeling, ` +
+    `request, or action into ${observer}'s action merely because the interpretation is written in ${observer}'s ` +
+    `first-person voice. ${observer} may say "I noticed Junior admitted..." or "Junior asked me...", but not "I ` +
+    `admitted..." unless the source explicitly attributes that act to ${observer}. Apply the same attribution rule to ` +
+    `summary, agentEmotion, and agentEmotionIntensity; the agent emotion must be how ${observer} feels about what ` +
+    `actually happened, never an emotion inferred from a misassigned action.\n\n` +
     `Items:\n${items}\n\n` +
     `Reply with ONLY a JSON array, one object per item, in order. No prose.`
   );
